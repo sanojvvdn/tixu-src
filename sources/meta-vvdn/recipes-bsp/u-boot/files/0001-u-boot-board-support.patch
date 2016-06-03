@@ -1,0 +1,1586 @@
+diff --git a/arch/arm/cpu/armv7/mx6/Kconfig b/arch/arm/cpu/armv7/mx6/Kconfig
+index 8489182..9e4bc86 100644
+--- a/arch/arm/cpu/armv7/mx6/Kconfig
++++ b/arch/arm/cpu/armv7/mx6/Kconfig
+@@ -90,6 +90,10 @@ config TARGET_MX6SLEVK
+ 	bool "mx6slevk"
+ 	select SUPPORT_SPL
+ 
++config TARGET_MX6SLTIXU
++	bool "mx6sltixu"
++	select SUPPORT_SPL
++
+ config TARGET_MX6SXSABRESD
+ 	bool "mx6sxsabresd"
+ 	select SUPPORT_SPL
+@@ -165,6 +169,7 @@ source "board/freescale/mx6qarm2/Kconfig"
+ source "board/freescale/mx6qsabreauto/Kconfig"
+ source "board/freescale/mx6sabresd/Kconfig"
+ source "board/freescale/mx6slevk/Kconfig"
++source "board/ti/mx6sltixu/Kconfig"
+ source "board/freescale/mx6sxsabresd/Kconfig"
+ source "board/freescale/mx6ul_14x14_evk/Kconfig"
+ source "board/gateworks/gw_ventana/Kconfig"
+diff --git a/arch/arm/cpu/armv7/mx6/clock.c b/arch/arm/cpu/armv7/mx6/clock.c
+index 11efd12..036b16f 100644
+--- a/arch/arm/cpu/armv7/mx6/clock.c
++++ b/arch/arm/cpu/armv7/mx6/clock.c
+@@ -22,8 +22,8 @@ enum pll_clocks {
+ 
+ struct mxc_ccm_reg *imx_ccm = (struct mxc_ccm_reg *)CCM_BASE_ADDR;
+ 
+-#ifdef CONFIG_MXC_OCOTP
+-void enable_ocotp_clk(unsigned char enable)
++#ifdef CONFIG_IMX_OTP
++void enable_otp_clk(unsigned char enable)
+ {
+ 	u32 reg;
+ 
+diff --git a/arch/arm/include/asm/arch-mx6/imx-regs.h b/arch/arm/include/asm/arch-mx6/imx-regs.h
+index 0de1ff9..8c5d29f 100644
+--- a/arch/arm/include/asm/arch-mx6/imx-regs.h
++++ b/arch/arm/include/asm/arch-mx6/imx-regs.h
+@@ -929,5 +929,24 @@ struct pwm_regs {
+ 	u32	pr;
+ 	u32	cnr;
+ };
++
++#define BP_OCOTP_CTRL_WR_UNLOCK		16
++#define BM_OCOTP_CTRL_WR_UNLOCK		0xFFFF0000
++#define BV_OCOTP_CTRL_WR_UNLOCK__KEY	0x3E77
++#define BM_OCOTP_CTRL_RELOAD_SHADOWS	0x00000400
++#define BM_OCOTP_CTRL_ERROR		0x00000200
++#define BM_OCOTP_CTRL_BUSY		0x00000100
++#define BP_OCOTP_CTRL_ADDR		0
++#define BM_OCOTP_CTRL_ADDR		0x0000007F
++
++#define BP_OCOTP_TIMING_STROBE_READ	16
++#define BM_OCOTP_TIMING_STROBE_READ	0x003F0000
++#define BP_OCOTP_TIMING_RELAX		12
++#define BM_OCOTP_TIMING_RELAX		0x0000F000
++#define BP_OCOTP_TIMING_STROBE_PROG     0
++#define BM_OCOTP_TIMING_STROBE_PROG	0x00000FFF
++
++#define BM_OCOTP_READ_CTRL_READ_FUSE	0x00000001
++
+ #endif /* __ASSEMBLER__*/
+ #endif /* __ASM_ARCH_MX6_IMX_REGS_H__ */
+diff --git a/arch/arm/include/asm/arch-mx6/mx6sl_pins.h b/arch/arm/include/asm/arch-mx6/mx6sl_pins.h
+index 6ba1034..5c095c6 100644
+--- a/arch/arm/include/asm/arch-mx6/mx6sl_pins.h
++++ b/arch/arm/include/asm/arch-mx6/mx6sl_pins.h
+@@ -58,7 +58,7 @@ enum {
+ 	MX6_PAD_FEC_REF_CLK__FEC_REF_OUT			= IOMUX_PAD(0x424, 0x134, 0x10, 0x000, 0, 0),
+ 	MX6_PAD_FEC_RX_ER__GPIO_4_19				= IOMUX_PAD(0x0428, 0x0138, 5, 0x0000, 0, 0),
+ 	MX6_PAD_FEC_TX_CLK__GPIO_4_21				= IOMUX_PAD(0x0434, 0x0144, 5, 0x0000, 0, 0),
+-
++	MX6_PAD_FEC_TX_CLK__GPIO_1_12				= IOMUX_PAD(0x3ac, 0x0bc, 0x5, 0x000, 0, 0),
+ 	MX6_PAD_EPDC_PWRCOM__ANATOP_USBOTG1_ID			= IOMUX_PAD(0x03D0, 0x00E0, 4, 0x05DC, 0, 0),
+ 
+ 	MX6_PAD_KEY_COL4__USB_USBOTG1_PWR			= IOMUX_PAD(0x0484, 0x017C, 6, 0x0000, 0, 0),
+diff --git a/arch/arm/include/asm/arch-mx6/sys_proto.h b/arch/arm/include/asm/arch-mx6/sys_proto.h
+index 16c9b76..5109cd4 100644
+--- a/arch/arm/include/asm/arch-mx6/sys_proto.h
++++ b/arch/arm/include/asm/arch-mx6/sys_proto.h
+@@ -6,3 +6,8 @@
+  */
+ 
+ #include <asm/imx-common/sys_proto.h>
++
++/* OTP related functionality */
++int imx_otp_read_one_u32(u32, u32 *);
++int imx_otp_blow_one_u32(u32, u32, u32 *);
++void enable_otp_clk(unsigned char);
+diff --git a/board/ti/mx6sltixu/Kconfig b/board/ti/mx6sltixu/Kconfig
+index e69de29..294607f 100644
+--- a/board/ti/mx6sltixu/Kconfig
++++ b/board/ti/mx6sltixu/Kconfig
+@@ -0,0 +1,12 @@
++if TARGET_MX6SLTIXU
++
++config SYS_BOARD
++	default "mx6sltixu"
++
++config SYS_VENDOR
++	default "ti"
++
++config SYS_CONFIG_NAME
++	default "mx6sltixu"
++
++endif
+diff --git a/board/ti/mx6sltixu/MAINTAINERS b/board/ti/mx6sltixu/MAINTAINERS
+index e69de29..ea99a44 100644
+--- a/board/ti/mx6sltixu/MAINTAINERS
++++ b/board/ti/mx6sltixu/MAINTAINERS
+@@ -0,0 +1,9 @@
++MX6SLTIXU BOARD
++M:	Sanoj Kumar <sanoj.kumar@vvdntech.com>
++M:	Vipul Kumar <vipul.kumar@vvdntech.in>
++S:	Maintained
++F:	board/ti/mx6sltixu/
++F:	include/configs/mx6sltixu.h
++F:	configs/mx6sltixu_defconfig
++F:	configs/mx6sltixu_spl_defconfig
++F:	configs/mx6sltixu_spinor_defconfig
+diff --git a/board/ti/mx6sltixu/Makefile b/board/ti/mx6sltixu/Makefile
+index e69de29..4f1c3cb 100644
+--- a/board/ti/mx6sltixu/Makefile
++++ b/board/ti/mx6sltixu/Makefile
+@@ -0,0 +1,6 @@
++# (C) Copyright 2013 Freescale Semiconductor, Inc.
++#
++# SPDX-License-Identifier:	GPL-2.0+
++#
++
++obj-y  := mx6sltixu.o
+diff --git a/board/ti/mx6sltixu/imximage.cfg b/board/ti/mx6sltixu/imximage.cfg
+index e69de29..68ae100 100644
+--- a/board/ti/mx6sltixu/imximage.cfg
++++ b/board/ti/mx6sltixu/imximage.cfg
+@@ -0,0 +1,115 @@
++/*
++ * Copyright (C) 2013 Freescale Semiconductor, Inc.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ *
++ * Refer docs/README.imxmage for more details about how-to configure
++ * and create imximage boot image
++ *
++ * The syntax is taken as close as possible with the kwbimage
++ */
++
++/* image version */
++
++IMAGE_VERSION 2
++
++/*
++ * Boot Device : one of
++ * spi, sd (the board has no nand neither onenand)
++ */
++
++BOOT_FROM	sd
++
++/*
++ * Device Configuration Data (DCD)
++ *
++ * Each entry must have the format:
++ * Addr-type           Address        Value
++ *
++ * where:
++ *	Addr-type register length (1,2 or 4 bytes)
++ *	Address	  absolute address of the register
++ *	value	  value to be stored in the register
++ */
++DATA 4 0x020c4018 0x00260324
++
++DATA 4 0x020c4068 0xffffffff
++DATA 4 0x020c406c 0xffffffff
++DATA 4 0x020c4070 0xffffffff
++DATA 4 0x020c4074 0xffffffff
++DATA 4 0x020c4078 0xffffffff
++DATA 4 0x020c407c 0xffffffff
++DATA 4 0x020c4080 0xffffffff
++
++DATA 4 0x020e0344 0x00000030
++DATA 4 0x020e0348 0x00000030
++DATA 4 0x020e034c 0x00000030
++DATA 4 0x020e0350 0x00000030
++DATA 4 0x020e030c 0x00000030
++DATA 4 0x020e0310 0x00000030
++DATA 4 0x020e0314 0x00000030
++DATA 4 0x020e0318 0x00000030
++DATA 4 0x020e0300 0x00000030
++DATA 4 0x020e031c 0x00000030
++DATA 4 0x020e0338 0x00000030
++DATA 4 0x020e0320 0x00000030
++DATA 4 0x020e032c 0x00000000
++DATA 4 0x020e033c 0x00000030
++DATA 4 0x020e0340 0x00000030
++DATA 4 0x020e05c4 0x00000030
++DATA 4 0x020e05cc 0x00000030
++DATA 4 0x020e05d4 0x00000030
++DATA 4 0x020e05d8 0x00000030
++DATA 4 0x020e05ac 0x00000030
++DATA 4 0x020e05c8 0x00000030
++DATA 4 0x020e05b0 0x00020000
++DATA 4 0x020e05b4 0x00000000
++DATA 4 0x020e05c0 0x00020000
++DATA 4 0x020e05d0 0x000c0000
++
++DATA 4 0x021b001c 0x00008000
++DATA 4 0x021b085c 0x1b4700c7
++DATA 4 0x021b0800 0xa1390003
++DATA 4 0x021b0890 0x00300000
++DATA 4 0x021b08b8 0x00000800
++DATA 4 0x021b081c 0x33333333
++DATA 4 0x021b0820 0x33333333
++DATA 4 0x021b0824 0x33333333
++DATA 4 0x021b0828 0x33333333
++DATA 4 0x021b082c 0xf3333333
++DATA 4 0x021b0830 0xf3333333
++DATA 4 0x021b0834 0xf3333333
++DATA 4 0x021b0838 0xf3333333
++DATA 4 0x021b0848 0x3C3E4246
++DATA 4 0x021b0850 0x383A3A34
++DATA 4 0x021b083c 0x414C013C
++DATA 4 0x021b0840 0x01300124
++DATA 4 0x021b08c0 0x24911492
++DATA 4 0x021b08b8 0x00000800
++DATA 4 0x021b000c 0x3F435313
++DATA 4 0x021b0004 0x00020024
++DATA 4 0x021b0010 0xB68E8B63
++DATA 4 0x021b0014 0x01FE00DB
++DATA 4 0x021b0018 0x00081740
++DATA 4 0x021b002c 0x000026D2
++DATA 4 0x021b0030 0x00431023
++DATA 4 0x021b0038 0x00000000
++DATA 4 0x021b0008 0x00333040
++DATA 4 0x021b0040 0x0000004F
++DATA 4 0x021b0000 0x83190000
++DATA 4 0x021b001c 0x00048031
++DATA 4 0x021b001c 0x04008032
++DATA 4 0x021b001c 0x00008033
++DATA 4 0x021b001c 0x05208030
++DATA 4 0x021b001c 0x04008040
++DATA 4 0x021b001c 0xff0a8038
++DATA 4 0x021b001c 0x82018038
++DATA 4 0x021b001c 0x04028038
++DATA 4 0x021b001c 0x02038038
++DATA 4 0x021b0800 0xa1310003
++DATA 4 0x021b0020 0x00005800
++DATA 4 0x021b0818 0x00000117
++DATA 4 0x021b08b8 0x00000800
++DATA 4 0x021b0004 0x00025564
++DATA 4 0x021b0404 0x00011006
++DATA 4 0x021b001c 0x00000000
+diff --git a/board/ti/mx6sltixu/mx6sltixu.c b/board/ti/mx6sltixu/mx6sltixu.c
+index e69de29..861c7c6 100644
+--- a/board/ti/mx6sltixu/mx6sltixu.c
++++ b/board/ti/mx6sltixu/mx6sltixu.c
+@@ -0,0 +1,552 @@
++/*
++ * Copyright (C) 2013 Freescale Semiconductor, Inc.
++ *
++ * Author: Fabio Estevam <fabio.estevam@freescale.com>
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <asm/arch/clock.h>
++#include <asm/arch/iomux.h>
++#include <asm/arch/crm_regs.h>
++#include <asm/arch/imx-regs.h>
++#include <asm/arch/mx6-ddr.h>
++#include <asm/arch/mx6-pins.h>
++#include <asm/arch/sys_proto.h>
++#include <asm/gpio.h>
++#include <asm/imx-common/iomux-v3.h>
++#include <asm/imx-common/mxc_i2c.h>
++#include <asm/imx-common/spi.h>
++#include <asm/io.h>
++#include <linux/sizes.h>
++#include <common.h>
++#include <fsl_esdhc.h>
++#include <i2c.h>
++#include <mmc.h>
++#include <netdev.h>
++#include <power/pmic.h>
++
++#include <power/tps65910.h>
++
++#include <usb.h>
++#include <usb/ehci-fsl.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++#define UART_PAD_CTRL  (PAD_CTL_PUS_100K_UP |			\
++	PAD_CTL_SPEED_MED | PAD_CTL_DSE_40ohm |			\
++	PAD_CTL_SRE_FAST  | PAD_CTL_HYS)
++
++#define USDHC_PAD_CTRL (PAD_CTL_PUS_22K_UP |			\
++	PAD_CTL_SPEED_LOW | PAD_CTL_DSE_80ohm |			\
++	PAD_CTL_SRE_FAST  | PAD_CTL_HYS)
++
++#define ENET_PAD_CTRL  (PAD_CTL_PKE | PAD_CTL_PUE |             \
++	PAD_CTL_PUS_100K_UP | PAD_CTL_SPEED_MED   |             \
++	PAD_CTL_DSE_40ohm   | PAD_CTL_HYS)
++
++#define SPI_PAD_CTRL (PAD_CTL_HYS | PAD_CTL_SPEED_MED | \
++		      PAD_CTL_DSE_40ohm | PAD_CTL_SRE_FAST)
++
++#define I2C_PAD_CTRL (PAD_CTL_PKE | PAD_CTL_PUE |		\
++		      PAD_CTL_PUS_100K_UP | PAD_CTL_SPEED_MED |	\
++		      PAD_CTL_DSE_40ohm | PAD_CTL_HYS |		\
++		      PAD_CTL_ODE | PAD_CTL_SRE_FAST)
++
++#define OTGID_PAD_CTRL (PAD_CTL_PKE | PAD_CTL_PUE |		\
++			PAD_CTL_PUS_47K_UP | PAD_CTL_SPEED_LOW |\
++			PAD_CTL_DSE_80ohm | PAD_CTL_HYS |	\
++			PAD_CTL_SRE_FAST)
++
++#define ETH_PHY_RESET	IMX_GPIO_NR(1, 12)
++
++int dram_init(void)
++{
++	gd->ram_size = get_ram_size((void *)PHYS_SDRAM, PHYS_SDRAM_SIZE);
++
++	return 0;
++}
++
++/* Debug Console */
++static iomux_v3_cfg_t const uart1_pads[] = {
++	MX6_PAD_UART1_TXD__UART1_TXD | MUX_PAD_CTRL(UART_PAD_CTRL),
++	MX6_PAD_UART1_RXD__UART1_RXD | MUX_PAD_CTRL(UART_PAD_CTRL),
++};
++
++/* SD Card */
++static iomux_v3_cfg_t const usdhc1_pads[] = {
++	/* 4 bit SD */
++	MX6_PAD_SD1_CLK__USDHC1_CLK | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD1_CMD__USDHC1_CMD | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD1_DAT0__USDHC1_DAT0 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD1_DAT1__USDHC1_DAT1 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD1_DAT2__USDHC1_DAT2 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD1_DAT3__USDHC1_DAT3 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	/*CD pin*/
++	MX6_PAD_KEY_ROW7__GPIO_4_7 | MUX_PAD_CTRL(NO_PAD_CTRL),
++};
++
++static iomux_v3_cfg_t const usdhc2_pads[] = {
++	MX6_PAD_SD2_CLK__USDHC2_CLK | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD2_CMD__USDHC2_CMD | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD2_DAT0__USDHC2_DAT0 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD2_DAT1__USDHC2_DAT1 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD2_DAT2__USDHC2_DAT2 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD2_DAT3__USDHC2_DAT3 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++
++	/*CD pin*/
++	MX6_PAD_SD2_DAT7__GPIO_5_0 | MUX_PAD_CTRL(NO_PAD_CTRL),
++};
++
++static iomux_v3_cfg_t const usdhc3_pads[] = {
++	MX6_PAD_SD3_CLK__USDHC3_CLK | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD3_CMD__USDHC3_CMD | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD3_DAT0__USDHC3_DAT0 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD3_DAT1__USDHC3_DAT1 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD3_DAT2__USDHC3_DAT2 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++	MX6_PAD_SD3_DAT3__USDHC3_DAT3 | MUX_PAD_CTRL(USDHC_PAD_CTRL),
++
++	/*CD pin*/
++	MX6_PAD_REF_CLK_32K__GPIO_3_22 | MUX_PAD_CTRL(NO_PAD_CTRL),
++};
++
++/* Ethernet */
++static iomux_v3_cfg_t const fec_pads[] = {
++	MX6_PAD_FEC_MDC__FEC_MDC | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX6_PAD_FEC_MDIO__FEC_MDIO | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX6_PAD_FEC_CRS_DV__FEC_RX_DV | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX6_PAD_FEC_RXD0__FEC_RX_DATA0 | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX6_PAD_FEC_RXD1__FEC_RX_DATA1 | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX6_PAD_FEC_TX_EN__FEC_TX_EN | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX6_PAD_FEC_TXD0__FEC_TX_DATA0 | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX6_PAD_FEC_TXD1__FEC_TX_DATA1 | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX6_PAD_FEC_REF_CLK__FEC_REF_OUT | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX6_PAD_FEC_TX_CLK__GPIO_1_12 | MUX_PAD_CTRL(NO_PAD_CTRL),
++};
++
++/* SPI NOR */
++#ifdef CONFIG_MXC_SPI
++static iomux_v3_cfg_t ecspi1_pads[] = {
++	MX6_PAD_ECSPI1_MISO__ECSPI_MISO | MUX_PAD_CTRL(SPI_PAD_CTRL),
++	MX6_PAD_ECSPI1_MOSI__ECSPI_MOSI | MUX_PAD_CTRL(SPI_PAD_CTRL),
++	MX6_PAD_ECSPI1_SCLK__ECSPI_SCLK | MUX_PAD_CTRL(SPI_PAD_CTRL),
++	MX6_PAD_ECSPI1_SS0__GPIO4_IO11  | MUX_PAD_CTRL(NO_PAD_CTRL),
++};
++
++int board_spi_cs_gpio(unsigned bus, unsigned cs)
++{
++	return (bus == 0 && cs == 0) ? (IMX_GPIO_NR(4, 11)) : -1;
++}
++
++static void setup_spi(void)
++{
++	imx_iomux_v3_setup_multiple_pads(ecspi1_pads, ARRAY_SIZE(ecspi1_pads));
++}
++#endif
++
++static void setup_iomux_uart(void)
++{
++	imx_iomux_v3_setup_multiple_pads(uart1_pads, ARRAY_SIZE(uart1_pads));
++}
++
++static void setup_iomux_fec(void)
++{
++	imx_iomux_v3_setup_multiple_pads(fec_pads, ARRAY_SIZE(fec_pads));
++
++	/* Reset LAN8720 PHY */
++	gpio_direction_output(ETH_PHY_RESET , 0);
++	udelay(1000);
++	gpio_set_value(ETH_PHY_RESET, 1);
++}
++
++#define USDHC1_CD_GPIO	IMX_GPIO_NR(4, 7)
++#define USDHC2_CD_GPIO	IMX_GPIO_NR(5, 0)
++#define USDHC3_CD_GPIO	IMX_GPIO_NR(3, 22)
++
++static struct fsl_esdhc_cfg usdhc_cfg[3] = {
++	{USDHC1_BASE_ADDR},
++	{USDHC2_BASE_ADDR, 0, 4},
++	{USDHC3_BASE_ADDR, 0, 4},
++};
++
++int board_mmc_getcd(struct mmc *mmc)
++{
++	struct fsl_esdhc_cfg *cfg = (struct fsl_esdhc_cfg *)mmc->priv;
++	int ret = 0;
++
++	switch (cfg->esdhc_base) {
++	case USDHC1_BASE_ADDR:
++		ret = !gpio_get_value(USDHC1_CD_GPIO);
++		break;
++	case USDHC2_BASE_ADDR:
++		ret = !gpio_get_value(USDHC2_CD_GPIO);
++		break;
++	case USDHC3_BASE_ADDR:
++		ret = !gpio_get_value(USDHC3_CD_GPIO);
++		break;
++	}
++
++	return ret;
++}
++
++int board_mmc_init(bd_t *bis)
++{
++#ifndef CONFIG_SPL_BUILD
++	int i, ret;
++
++	/*
++	 * According to the board_mmc_init() the following map is done:
++	 * (U-boot device node)    (Physical Port)
++	 * mmc0                    USDHC1
++	 * mmc1                    USDHC2
++	 * mmc2                    USDHC3
++	 */
++	for (i = 0; i < CONFIG_SYS_FSL_USDHC_NUM; i++) {
++		switch (i) {
++		case 0:
++			imx_iomux_v3_setup_multiple_pads(
++				usdhc1_pads, ARRAY_SIZE(usdhc1_pads));
++			gpio_direction_input(USDHC1_CD_GPIO);
++			usdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC_CLK);
++			break;
++		case 1:
++			imx_iomux_v3_setup_multiple_pads(
++				usdhc2_pads, ARRAY_SIZE(usdhc2_pads));
++			gpio_direction_input(USDHC2_CD_GPIO);
++			usdhc_cfg[1].sdhc_clk = mxc_get_clock(MXC_ESDHC2_CLK);
++			break;
++		case 2:
++			imx_iomux_v3_setup_multiple_pads(
++				usdhc3_pads, ARRAY_SIZE(usdhc3_pads));
++			gpio_direction_input(USDHC3_CD_GPIO);
++			usdhc_cfg[2].sdhc_clk = mxc_get_clock(MXC_ESDHC3_CLK);
++			break;
++		default:
++			printf("Warning: you configured more USDHC controllers"
++				"(%d) than supported by the board\n", i + 1);
++			return -EINVAL;
++			}
++
++			ret = fsl_esdhc_initialize(bis, &usdhc_cfg[i]);
++			if (ret) {
++				printf("Warning: failed to initialize "
++					"mmc dev %d\n", i);
++				return ret;
++			}
++	}
++
++	return 0;
++#else
++	struct src *src_regs = (struct src *)SRC_BASE_ADDR;
++	u32 val;
++	u32 port;
++
++	val = readl(&src_regs->sbmr1);
++
++	/* Boot from USDHC */
++	port = (val >> 11) & 0x3;
++	switch (port) {
++	case 0:
++		imx_iomux_v3_setup_multiple_pads(usdhc1_pads,
++						 ARRAY_SIZE(usdhc1_pads));
++		gpio_direction_input(USDHC1_CD_GPIO);
++		usdhc_cfg[0].esdhc_base = USDHC1_BASE_ADDR;
++		usdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC_CLK);
++		break;
++	case 1:
++		imx_iomux_v3_setup_multiple_pads(usdhc2_pads,
++						 ARRAY_SIZE(usdhc2_pads));
++		gpio_direction_input(USDHC2_CD_GPIO);
++		usdhc_cfg[0].esdhc_base = USDHC2_BASE_ADDR;
++		usdhc_cfg[0].max_bus_width = 4;
++		usdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC2_CLK);
++		break;
++	case 2:
++		imx_iomux_v3_setup_multiple_pads(usdhc3_pads,
++						 ARRAY_SIZE(usdhc3_pads));
++		gpio_direction_input(USDHC3_CD_GPIO);
++		usdhc_cfg[0].esdhc_base = USDHC3_BASE_ADDR;
++		usdhc_cfg[0].max_bus_width = 4;
++		usdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC3_CLK);
++		break;
++	}
++
++	gd->arch.sdhc_clk = usdhc_cfg[0].sdhc_clk;
++	return fsl_esdhc_initialize(bis, &usdhc_cfg[0]);
++#endif
++}
++
++#ifdef CONFIG_SYS_I2C_MXC
++#ifdef CONFIG_POWER_TPS65910 
++#define PC	MUX_PAD_CTRL(I2C_PAD_CTRL)
++/* I2C1 for PMIC */
++struct i2c_pads_info i2c_pad_info1 = {
++	.sda = {
++		.i2c_mode = MX6_PAD_I2C1_SDA__I2C1_SDA | PC,
++		.gpio_mode = MX6_PAD_I2C1_SDA__GPIO_3_13 | PC,
++		.gp = IMX_GPIO_NR(3, 13),
++	},
++	.scl = {
++		.i2c_mode = MX6_PAD_I2C1_SCL__I2C1_SCL | PC,
++		.gpio_mode = MX6_PAD_I2C1_SCL__GPIO_3_12 | PC,
++		.gp = IMX_GPIO_NR(3, 12),
++	},
++};
++
++/* TPS65910 PMIC initialization */
++int power_init_board(void)
++{
++	int sil_rev;
++	int ret;
++		/*
++		 * The GP EVM, IDK and EVM SK use a TPS65910 PMIC.  For all
++		 * MPU frequencies we support we use a CORE voltage of
++		 * 1.1375V.  For MPU voltage we need to switch based on
++		 * the frequency we are running at.
++		 */
++		if (i2c_probe(TPS65910_CTRL_I2C_ADDR))
++			return;
++
++		/*
++		 * Depending on MPU clock and PG we will need a different
++		 * VDD to drive at that speed.
++		 */
++		
++		/* Tell the TPS65910 to use i2c */
++		tps65910_set_i2c_control();
++
++		/* First update MPU voltage. */
++		if (tps65910_voltage_update(MPU, TPS65910_OP_REG_SEL_1_1_3)){
++			return;
++		}
++		/* Second, update the CORE voltage. */
++		if (tps65910_voltage_update(CORE, TPS65910_OP_REG_SEL_1_1_3)){
++			return;
++		}
++		
++}
++#endif
++#endif
++
++#ifdef CONFIG_FEC_MXC
++int board_eth_init(bd_t *bis)
++{
++	setup_iomux_fec();
++
++	return cpu_eth_init(bis);
++}
++
++static int setup_fec(void)
++{
++	struct iomuxc *iomuxc_regs = (struct iomuxc *)IOMUXC_BASE_ADDR;
++
++	/* clear gpr1[14], gpr1[18:17] to select anatop clock */
++	clrsetbits_le32(&iomuxc_regs->gpr[1], IOMUX_GPR1_FEC_MASK, 0);
++
++	return enable_fec_anatop_clock(0, ENET_50MHZ);
++}
++#endif
++
++#ifdef CONFIG_USB_EHCI_MX6
++#define USB_OTHERREGS_OFFSET	0x800
++#define UCTRL_PWR_POL		(1 << 9)
++
++static iomux_v3_cfg_t const usb_otg_pads[] = {
++	/* OTG1 */
++	MX6_PAD_KEY_COL4__USB_USBOTG1_PWR | MUX_PAD_CTRL(NO_PAD_CTRL),
++	MX6_PAD_EPDC_PWRCOM__ANATOP_USBOTG1_ID | MUX_PAD_CTRL(OTGID_PAD_CTRL),
++	/* OTG2 */
++	MX6_PAD_KEY_COL5__USB_USBOTG2_PWR | MUX_PAD_CTRL(NO_PAD_CTRL)
++};
++
++static void setup_usb(void)
++{
++	imx_iomux_v3_setup_multiple_pads(usb_otg_pads,
++					 ARRAY_SIZE(usb_otg_pads));
++}
++
++int board_usb_phy_mode(int port)
++{
++	if (port == 1)
++		return USB_INIT_HOST;
++	else
++		return usb_phy_mode(port);
++}
++
++int board_ehci_hcd_init(int port)
++{
++	u32 *usbnc_usb_ctrl;
++
++	if (port > 1)
++		return -EINVAL;
++
++	usbnc_usb_ctrl = (u32 *)(USB_BASE_ADDR + USB_OTHERREGS_OFFSET +
++				 port * 4);
++
++	/* Set Power polarity */
++	setbits_le32(usbnc_usb_ctrl, UCTRL_PWR_POL);
++
++	return 0;
++}
++#endif
++
++int board_early_init_f(void)
++{
++	setup_iomux_uart();
++#ifdef CONFIG_MXC_SPI
++	setup_spi();
++#endif
++	return 0;
++}
++
++int board_init(void)
++{
++	/* address of boot parameters */
++	gd->bd->bi_boot_params = PHYS_SDRAM + 0x100;
++
++#ifdef CONFIG_SYS_I2C_MXC
++#ifdef CONFIG_POWER_TPS65910 
++	setup_i2c(0, CONFIG_SYS_I2C_SPEED, 0x2d, &i2c_pad_info1);
++#endif
++#endif
++
++#ifdef	CONFIG_FEC_MXC
++	setup_fec();
++#endif
++
++#ifdef CONFIG_USB_EHCI_MX6
++	setup_usb();
++#endif
++
++	return 0;
++}
++
++int checkboard(void)
++{
++	puts("Board: MX6SLTIXU\n");
++
++	return 0;
++}
++
++#ifdef CONFIG_SPL_BUILD
++#include <spl.h>
++#include <libfdt.h>
++
++const struct mx6sl_iomux_ddr_regs mx6_ddr_ioregs = {
++	.dram_sdqs0 = 0x00003030,
++	.dram_sdqs1 = 0x00003030,
++	.dram_sdqs2 = 0x00003030,
++	.dram_sdqs3 = 0x00003030,
++	.dram_dqm0 = 0x00000030,
++	.dram_dqm1 = 0x00000030,
++	.dram_dqm2 = 0x00000030,
++	.dram_dqm3 = 0x00000030,
++	.dram_cas  = 0x00000030,
++	.dram_ras  = 0x00000030,
++	.dram_sdclk_0 = 0x00000028,
++	.dram_reset = 0x00000030,
++	.dram_sdba2 = 0x00000000,
++	.dram_odt0 = 0x00000008,
++	.dram_odt1 = 0x00000008,
++};
++
++const struct mx6sl_iomux_grp_regs mx6_grp_ioregs = {
++	.grp_b0ds = 0x00000030,
++	.grp_b1ds = 0x00000030,
++	.grp_b2ds = 0x00000030,
++	.grp_b3ds = 0x00000030,
++	.grp_addds = 0x00000030,
++	.grp_ctlds = 0x00000030,
++	.grp_ddrmode_ctl = 0x00020000,
++	.grp_ddrpke = 0x00000000,
++	.grp_ddrmode = 0x00020000,
++	.grp_ddr_type = 0x00080000,
++};
++
++const struct mx6_mmdc_calibration mx6_mmcd_calib = {
++	.p0_mpdgctrl0 =  0x20000000,
++	.p0_mpdgctrl1 =  0x00000000,
++	.p0_mprddlctl =  0x4241444a,
++	.p0_mpwrdlctl =  0x3030312b,
++	.mpzqlp2ctl = 0x1b4700c7,
++};
++
++static struct mx6_lpddr2_cfg mem_ddr = {
++	.mem_speed = 800,
++	.density = 4,
++	.width = 32,
++	.banks = 8,
++	.rowaddr = 14,
++	.coladdr = 10,
++	.trcd_lp = 2000,
++	.trppb_lp = 2000,
++	.trpab_lp = 2250,
++	.trasmin = 4200,
++};
++
++static void ccgr_init(void)
++{
++	struct mxc_ccm_reg *ccm = (struct mxc_ccm_reg *)CCM_BASE_ADDR;
++
++	writel(0xFFFFFFFF, &ccm->CCGR0);
++	writel(0xFFFFFFFF, &ccm->CCGR1);
++	writel(0xFFFFFFFF, &ccm->CCGR2);
++	writel(0xFFFFFFFF, &ccm->CCGR3);
++	writel(0xFFFFFFFF, &ccm->CCGR4);
++	writel(0xFFFFFFFF, &ccm->CCGR5);
++	writel(0xFFFFFFFF, &ccm->CCGR6);
++
++	writel(0x00260324, &ccm->cbcmr);
++}
++
++static void spl_dram_init(void)
++{
++	struct mx6_ddr_sysinfo sysinfo = {
++		.dsize = mem_ddr.width / 32,
++		.cs_density = 20,
++		.ncs = 2,
++		.cs1_mirror = 0,
++		.walat = 0,
++		.ralat = 2,
++		.mif3_mode = 3,
++		.bi_on = 1,
++		.rtt_wr = 0,        /* LPDDR2 does not need rtt_wr rtt_nom */
++		.rtt_nom = 0,
++		.sde_to_rst = 0,    /* LPDDR2 does not need this field */
++		.rst_to_cke = 0x10, /* JEDEC value for LPDDR2: 200us */
++		.ddr_type = DDR_TYPE_LPDDR2,
++	};
++	mx6sl_dram_iocfg(32, &mx6_ddr_ioregs, &mx6_grp_ioregs);
++	mx6_dram_cfg(&sysinfo, &mx6_mmcd_calib, &mem_ddr);
++}
++
++void board_init_f(ulong dummy)
++{
++	/* setup AIPS and disable watchdog */
++	arch_cpu_init();
++
++	ccgr_init();
++
++	/* iomux and setup of i2c */
++	board_early_init_f();
++
++	/* setup GP timer */
++	timer_init();
++
++	/* UART clocks enabled and gd valid - init serial console */
++	preloader_console_init();
++
++	/* DDR initialization */
++	spl_dram_init();
++
++	/* Clear the BSS. */
++	memset(__bss_start, 0, __bss_end - __bss_start);
++
++	/* load/boot image from boot device */
++	board_init_r(NULL, 0);
++}
++
++void reset_cpu(ulong addr)
++{
++}
++#endif
+diff --git a/common/Kconfig b/common/Kconfig
+index 2c42b8e..ef46774 100644
+--- a/common/Kconfig
++++ b/common/Kconfig
+@@ -344,6 +344,11 @@ config CMD_FPGA
+ 	help
+ 	  FPGA support.
+ 
++config CMD_IMXOTP
++	bool "imxotp"
++	default y
++	help
++	  FUSE ACCESS/BLOW Support.
+ endmenu
+ 
+ 
+diff --git a/common/Makefile b/common/Makefile
+index 491c565..8757292 100644
+--- a/common/Makefile
++++ b/common/Makefile
+@@ -144,6 +144,7 @@ obj-$(CONFIG_CMD_NAND) += cmd_nand.o
+ obj-$(CONFIG_CMD_NET) += cmd_net.o
+ obj-$(CONFIG_CMD_ONENAND) += cmd_onenand.o
+ obj-$(CONFIG_CMD_OTP) += cmd_otp.o
++obj-$(CONFIG_CMD_IMXOTP) +=cmd_imxotp.o
+ obj-$(CONFIG_CMD_PART) += cmd_part.o
+ ifdef CONFIG_PCI
+ obj-$(CONFIG_CMD_PCI) += cmd_pci.o
+diff --git a/common/cmd_imxotp.c b/common/cmd_imxotp.c
+index e69de29..3d5b98a 100644
+--- a/common/cmd_imxotp.c
++++ b/common/cmd_imxotp.c
+@@ -0,0 +1,159 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <common.h>
++#include <command.h>
++#include <asm/arch/sys_proto.h>
++
++/* meant to reject most of the zeros return by simple_strtoul call */
++int validate_zero_from_simple_strtoul(char *str)
++{
++	int i;
++
++	/* reject negatives */
++	if (str[0] == '-')
++		return -1;
++
++	/* reject no zero initialed */
++	if (str[0] != '0')
++		return -1;
++
++	/* accept zero */
++	if (strlen(str) == 1)
++		return 0;
++
++	/* only accept started with "0x" or "0X" or "00" */
++	if (str[1] != 'x' && str[1] != 'X' && str[1] != '0')
++		return -1;
++
++	/* reject "0x" or "0X" or "00" only */
++	if (strlen(str) == 3)
++		return -1;
++
++	/* only accept all zeros */
++	for (i = 1; i < strlen(str) - 1; i++) {
++		if (str[1] != '0')
++			return -1;
++	}
++	return 0;
++}
++
++int do_imxotp(cmd_tbl_t *cmd_tbl, int flag, int argc, char *  const argv[])
++{
++	u32 addr, value_read;
++#ifdef IMX_OTPWRITE_ENABLED
++	u32 fused_value, value_to_fuse;
++	int force_to_fuse = 0;
++#endif
++
++	if (argc < 3) {
++usage:
++		cmd_usage(cmd_tbl);
++		return 1;
++	}
++
++	if (!strcmp(argv[1], "read")) {
++		switch (argc) {
++		case 3:
++			addr = simple_strtoul(argv[2], NULL, 16);
++			if ((addr == 0) &&
++				validate_zero_from_simple_strtoul(argv[2]))
++				goto usage;
++			break;
++		default:
++			goto usage;
++		}
++		printf("Reading fuse at index 0x%X\n", addr);
++		if (imx_otp_read_one_u32(addr, &value_read))
++			return -1;
++		printf("Fuse at index 0x%X has the value: 0x%08X\n", addr, value_read);
++#ifdef IMX_OTPWRITE_ENABLED
++	} else if (!strcmp(argv[1], "blow")) {
++		if (argc < 4 || argc > 5)
++			goto usage;
++
++		if (!strcmp(argv[2], "--force")) {
++			force_to_fuse = 1;
++			addr = simple_strtoul(argv[3], NULL, 16);
++			if ((addr == 0)
++				  && validate_zero_from_simple_strtoul(argv[3]))
++				goto usage;
++			value_to_fuse = simple_strtoul(argv[4], NULL, 16);
++			if ((value_to_fuse == 0)
++				  && validate_zero_from_simple_strtoul(argv[4]))
++				goto usage;
++		} else {
++			addr = simple_strtoul(argv[2], NULL, 16);
++			if ((addr == 0)
++				  && validate_zero_from_simple_strtoul(argv[2]))
++				goto usage;
++			value_to_fuse = simple_strtoul(argv[3], NULL, 16);
++			if ((value_to_fuse == 0)
++				  && validate_zero_from_simple_strtoul(argv[3]))
++				goto usage;
++		}
++
++		/* show the current value of specified address (fuse index) */
++		if (imx_otp_read_one_u32(addr, &value_read))
++			return -1;
++		printf("Current fuse at index 0x%X has the value: 0x%08X\n",
++				addr, value_read);
++
++		if ((value_to_fuse & value_read) == value_to_fuse)
++			printf("!! Fuse blow skipped:"
++					" the bits have been already set.\n");
++		else if (force_to_fuse) {
++			printf("Blowing fuse at index 0x%X, value: 0x%08X\n",
++					addr, value_to_fuse);
++			if (imx_otp_blow_one_u32(addr,
++					value_to_fuse, &fused_value)) {
++				printf("ERROR: failed to blow fuse"
++					  " at 0x%X with value of 0x%08X\n",
++						addr, value_to_fuse);
++			} else {
++				printf("Operation %s fuse"
++					  " at index 0x%X value: 0x%08X\n",
++					((fused_value & value_to_fuse) ==
++					value_to_fuse) ? "succeeded" : "failed",
++					addr, fused_value);
++			}
++		} else {
++			printf("!! Fuse blow aborted."
++				" if you do want to blow it."
++				" Please use the command:\n"
++				"%s blow --force %X %X\n",
++				argv[0], addr, value_to_fuse);
++		}
++#endif
++	} else
++		goto usage;
++
++	return 0;
++}
++
++U_BOOT_CMD(imxotp, 5, 0, do_imxotp,
++	"One-Time Programable sub-system for i.MX processors",
++	"read <addr>\n"
++	" - read fuse at 'addr'\n"
++#ifdef IMX_OTPWRITE_ENABLED
++	"imxotp blow [--force] <addr> <value>\n"
++	" - blow fuse at 'addr' with hex value 'value'\n"
++#endif
++);
+diff --git a/configs/mx6sltixu_defconfig b/configs/mx6sltixu_defconfig
+index e69de29..1c653fb 100644
+--- a/configs/mx6sltixu_defconfig
++++ b/configs/mx6sltixu_defconfig
+@@ -0,0 +1,10 @@
++CONFIG_ARM=y
++CONFIG_ARCH_MX6=y
++CONFIG_TARGET_MX6SLTIXU=y
++CONFIG_SYS_EXTRA_OPTIONS="IMX_CONFIG=board/ti/mx6sltixu/imximage.cfg,MX6SL"
++# CONFIG_CMD_IMLS is not set
++# CONFIG_CMD_FLASH is not set
++# CONFIG_CMD_SETEXPR is not set
++CONFIG_DM=y
++CONFIG_SPI_FLASH=y
++CONFIG_DM_THERMAL=y
+diff --git a/configs/mx6sltixu_spinor_defconfig b/configs/mx6sltixu_spinor_defconfig
+index e69de29..e0018a5 100644
+--- a/configs/mx6sltixu_spinor_defconfig
++++ b/configs/mx6sltixu_spinor_defconfig
+@@ -0,0 +1,10 @@
++CONFIG_ARM=y
++CONFIG_ARCH_MX6=y
++CONFIG_TARGET_MX6SLTIXU=y
++CONFIG_SYS_EXTRA_OPTIONS="IMX_CONFIG=board/ti/mx6sltixu/imximage.cfg,MX6SL,SYS_BOOT_SPINOR"
++# CONFIG_CMD_IMLS is not set
++# CONFIG_CMD_FLASH is not set
++# CONFIG_CMD_SETEXPR is not set
++CONFIG_DM=y
++CONFIG_SPI_FLASH=y
++CONFIG_DM_THERMAL=y
+diff --git a/configs/mx6sltixu_spl_defconfig b/configs/mx6sltixu_spl_defconfig
+index e69de29..51841ac 100644
+--- a/configs/mx6sltixu_spl_defconfig
++++ b/configs/mx6sltixu_spl_defconfig
+@@ -0,0 +1,8 @@
++CONFIG_ARM=y
++CONFIG_ARCH_MX6=y
++CONFIG_TARGET_MX6SLTIXU=y
++CONFIG_SPL=y
++CONFIG_SYS_EXTRA_OPTIONS="IMX_CONFIG=arch/arm/imx-common/spl_sd.cfg,SPL,MX6SL"
++CONFIG_DM=y
++CONFIG_SPI_FLASH=y
++CONFIG_DM_THERMAL=y
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index 8d0fc3c..620743c 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -16,6 +16,7 @@ obj-$(CONFIG_CROS_EC_SPI) += cros_ec_spi.o
+ obj-$(CONFIG_FSL_DEBUG_SERVER) += fsl_debug_server.o
+ obj-$(CONFIG_FSL_IIM) += fsl_iim.o
+ obj-$(CONFIG_GPIO_LED) += gpio_led.o
++obj-$(CONFIG_IMX_OTP) += imx_otp.o
+ obj-$(CONFIG_I2C_EEPROM) += i2c_eeprom.o
+ obj-$(CONFIG_FSL_MC9SDZ60) += mc9sdz60.o
+ obj-$(CONFIG_MXC_OCOTP) += mxc_ocotp.o
+diff --git a/drivers/misc/imx_otp.c b/drivers/misc/imx_otp.c
+index e69de29..a89c87b 100644
+--- a/drivers/misc/imx_otp.c
++++ b/drivers/misc/imx_otp.c
+@@ -0,0 +1,248 @@
++/*
++ * Copyright (C) 2011 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/arch/clock.h>
++#include <asm/arch/imx-regs.h>
++#include <asm/arch/sys_proto.h>
++
++#define BF(value, field)	(((value) << BP_##field) & BM_##field)
++#define DEF_RELAX 20
++
++#ifdef CONFIG_IMX_OTP_DEBUG
++#define log(a, ...) printf("[%s,%3d]:"a"\n", __func__, __LINE__, ## __VA_ARGS__)
++#else
++#define log(a, ...)
++#endif
++
++static int otp_wait_busy(u32 flags)
++{
++	int count;
++	u32 c;
++	struct ocotp_regs *otp = (struct ocotp_regs *)IMX_OTP_BASE;
++
++	for (count = 10000; count >= 0; count--) {
++		c = readl(&otp->ctrl);
++		if (!(c & (BM_OCOTP_CTRL_BUSY | BM_OCOTP_CTRL_ERROR | flags)))
++			break;
++	}
++
++	if (count < 0) {
++		printf("ERROR: otp_wait_busy timeout. 0x%X\n", c);
++		/* clear ERROR bit, busy bit will be cleared by controller */
++		writel(BM_OCOTP_CTRL_ERROR, &otp->ctrl_clr);
++		return -1;
++	}
++
++	log("wait busy successful.");
++	return 0;
++}
++
++static int set_otp_timing(void)
++{
++	u32 clk_rate;
++	u32 relax, strobe_read, strobe_prog;
++	u32 timing;
++	struct ocotp_regs *otp = (struct ocotp_regs *)IMX_OTP_BASE;
++
++	/* get clock */
++	clk_rate = mxc_get_clock(MXC_IPG_CLK);
++	if (clk_rate == -1) {
++		printf("ERROR: mxc_get_clock failed\n");
++		return -1;
++	}
++
++	log("clk_rate: %d.", clk_rate);
++
++	relax = clk_rate / (1000000000 / DEF_RELAX) - 1;
++	strobe_prog = clk_rate / (1000000000 / 10000) + 2 * (DEF_RELAX + 1) - 1;
++	strobe_read = clk_rate / (1000000000 / 40) + 2 * (DEF_RELAX + 1) - 1;
++
++	timing = BF(relax, OCOTP_TIMING_RELAX);
++	timing |= BF(strobe_read, OCOTP_TIMING_STROBE_READ);
++	timing |= BF(strobe_prog, OCOTP_TIMING_STROBE_PROG);
++	log("timing: 0x%X", timing);
++
++	writel(timing, &otp->timing);
++
++	return 0;
++}
++
++static int otp_read_prep(void)
++{
++	return  (!set_otp_timing()) ? otp_wait_busy(0) : -1;
++}
++
++#ifdef IMX_OTPWRITE_ENABLED
++static int otp_blow_prep(void)
++{
++	return  (!set_otp_timing()) ? otp_wait_busy(0) : -1;
++}
++
++static int otp_blow_post(void)
++{
++	struct ocotp_regs *otp = (struct ocotp_regs *)IMX_OTP_BASE;
++
++	printf("Reloading shadow registers...\n");
++	/* reload all the shadow registers */
++	writel(BM_OCOTP_CTRL_RELOAD_SHADOWS, &otp->ctrl_set);
++	udelay(1);
++
++	return otp_wait_busy(BM_OCOTP_CTRL_RELOAD_SHADOWS);
++}
++#endif
++
++static int fuse_read_addr(u32 addr, u32 *pdata)
++{
++	u32 ctrl_reg;
++	struct ocotp_regs *otp = (struct ocotp_regs *)IMX_OTP_BASE;
++
++	ctrl_reg = readl(&otp->ctrl);
++	ctrl_reg &= ~BM_OCOTP_CTRL_ADDR;
++	ctrl_reg &= ~BM_OCOTP_CTRL_WR_UNLOCK;
++	ctrl_reg |= BF(addr, OCOTP_CTRL_ADDR);
++	writel(ctrl_reg, &otp->ctrl);
++
++	writel(BM_OCOTP_READ_CTRL_READ_FUSE, &otp->read_ctrl);
++	
++	if (otp_wait_busy(0))
++		return -1;
++
++	*pdata = readl(&otp->read_fuse_data);
++	
++	return 0;
++}
++
++#ifdef IMX_OTPWRITE_ENABLED
++static int fuse_blow_addr(u32 addr, u32 value)
++{
++	u32 ctrl_reg;
++	struct ocotp_regs *otp = (struct ocotp_regs *)IMX_OTP_BASE;
++
++	log("blowing...");
++
++	/* control register */
++	ctrl_reg = readl(&otp->ctrl);
++	ctrl_reg &= ~BM_OCOTP_CTRL_ADDR;
++	ctrl_reg |= BF(addr, OCOTP_CTRL_ADDR);
++	ctrl_reg |= BF(BV_OCOTP_CTRL_WR_UNLOCK__KEY, OCOTP_CTRL_WR_UNLOCK);
++	writel(ctrl_reg, &otp->ctrl);
++
++	writel(value, &otp->data);
++	if (otp_wait_busy(0))
++		return -1;
++
++	/* write postamble */
++	udelay(2000);
++	return 0;
++}
++#endif
++
++/*
++ * read one u32 to indexed fuse
++ */
++int imx_otp_read_one_u32(u32 index, u32 *pdata)
++{
++	u32 ctrl_reg;
++	int ret = 0;
++	struct ocotp_regs *otp = (struct ocotp_regs *)IMX_OTP_BASE;
++
++	log("index: 0x%X", index);
++
++	if (index > IMX_OTP_ADDR_MAX) {
++		printf("ERROR: invalid address.\n");
++		ret = -1;
++		goto exit_nop;
++	}
++
++	enable_otp_clk(1);
++
++	if (otp_read_prep()) {
++		ret = -1;
++		printf("ERROR: read preparation failed\n");
++		goto exit_cleanup;
++	}
++
++	if (fuse_read_addr(index, pdata)) {
++		ret = -1;
++		printf("ERROR: read failed\n");
++		goto exit_cleanup;
++	}
++
++	if (*pdata == IMX_OTP_DATA_ERROR_VAL) {
++		ctrl_reg = readl(&otp->ctrl);
++		if (ctrl_reg & BM_OCOTP_CTRL_ERROR) {
++			printf("ERROR: read fuse failed\n");
++			ret = -1;
++		}
++	}
++
++exit_cleanup:
++	enable_otp_clk(0);
++exit_nop:
++	return ret;
++}
++
++#ifdef IMX_OTPWRITE_ENABLED
++/*
++ * blow one u32 to indexed fuse
++ */
++int imx_otp_blow_one_u32(u32 index, u32 data, u32 *pfused_value)
++{
++	int ret = 0;
++	struct ocotp_regs *otp = (struct ocotp_regs *)IMX_OTP_BASE;
++
++	enable_otp_clk(1);
++
++	if (otp_blow_prep()) {
++		ret = -1;
++		printf("ERROR: blow preparation failed\n");
++		goto exit_cleanup;
++	}
++
++	if (fuse_blow_addr(index, data)) {
++		ret = -1;
++		printf("ERROR: blow fuse failed\n");
++		goto exit_cleanup;
++	}
++
++	if (otp_blow_post()) {
++		ret = -1;
++		printf("ERROR: blow post operation failed\n");
++		goto exit_cleanup;
++	}
++
++	if (readl(&otp->ctrl) & BM_OCOTP_CTRL_ERROR) {
++		ret = -1;
++		printf("ERROR: OTP control\n");
++		goto exit_cleanup;
++	}
++
++	if (imx_otp_read_one_u32(index, pfused_value)) {
++		ret = -1;
++		printf("ERROR: OTP read\n");
++	}
++
++exit_cleanup:
++	enable_otp_clk(0);
++
++	return ret;
++}
++#endif
+diff --git a/drivers/misc/mxc_ocotp.c b/drivers/misc/mxc_ocotp.c
+index 65ff815..ddaf408 100644
+--- a/drivers/misc/mxc_ocotp.c
++++ b/drivers/misc/mxc_ocotp.c
+@@ -142,7 +142,7 @@ static int prepare_access(struct ocotp_regs **regs, u32 bank, u32 word,
+ 		return -EINVAL;
+ 	}
+ 
+-	enable_ocotp_clk(1);
++	enable_otp_clk(1);
+ 
+ 	wait_busy(*regs, 1);
+ 	clear_error(*regs);
+diff --git a/drivers/mtd/spi/sf_ops.c b/drivers/mtd/spi/sf_ops.c
+index ee23bb2..c7a4768 100644
+--- a/drivers/mtd/spi/sf_ops.c
++++ b/drivers/mtd/spi/sf_ops.c
+@@ -471,6 +471,11 @@ int spi_flash_cmd_read_ops(struct spi_flash *flash, u32 offset,
+ 		len -= read_len;
+ 		data += read_len;
+ 	}
++	spi_flash_bank(flash, 0x0);	/*Change the bank to first one after a read operation. This is needed
++					when uboot access happens beyond 16MB. When a reboot command is given
++					from linux if the selected bank is not the first one RBL will not be
++					able to load uboot */
++ 
+ 
+ 	free(cmd);
+ 	return ret;
+diff --git a/drivers/mtd/spi/sf_params.c b/drivers/mtd/spi/sf_params.c
+index 8f5bdda..2a427b5 100644
+--- a/drivers/mtd/spi/sf_params.c
++++ b/drivers/mtd/spi/sf_params.c
+@@ -84,9 +84,9 @@ const struct spi_flash_params spi_flash_params_table[] = {
+ 	{"N25Q64A",	   0x20bb17, 0x0,       64 * 1024,   128, RD_FULL,	   WR_QPP | SECT_4K},
+ 	{"N25Q128",	   0x20ba18, 0x0,       64 * 1024,   256, RD_FULL,		     WR_QPP},
+ 	{"N25Q128A",	   0x20bb18, 0x0,       64 * 1024,   256, RD_FULL,		     WR_QPP},
+-	{"N25Q256",	   0x20ba19, 0x0,       64 * 1024,   512, RD_FULL,	   WR_QPP | SECT_4K},
++	{"N25Q256",	   0x20ba19, 0x0,       64 * 1024,   512, RD_FULL,	   WR_QPP },
+ 	{"N25Q256A",	   0x20bb19, 0x0,       64 * 1024,   512, RD_FULL,	   WR_QPP | SECT_4K},
+-	{"N25Q512",	   0x20ba20, 0x0,       64 * 1024,  1024, RD_FULL, WR_QPP | E_FSR | SECT_4K},
++	{"N25Q512",	   0x20ba20, 0x0,       64 * 1024,  1024, RD_FULL, WR_QPP | E_FSR },
+ 	{"N25Q512A",	   0x20bb20, 0x0,       64 * 1024,  1024, RD_FULL, WR_QPP | E_FSR | SECT_4K},
+ 	{"N25Q1024",	   0x20ba21, 0x0,       64 * 1024,  2048, RD_FULL, WR_QPP | E_FSR | SECT_4K},
+ 	{"N25Q1024A",	   0x20bb21, 0x0,       64 * 1024,  2048, RD_FULL, WR_QPP | E_FSR | SECT_4K},
+diff --git a/include/configs/mx6sltixu.h b/include/configs/mx6sltixu.h
+index e69de29..e35c9d2 100644
+--- a/include/configs/mx6sltixu.h
++++ b/include/configs/mx6sltixu.h
+@@ -0,0 +1,224 @@
++/*
++ * Copyright 2013 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the TI i.MX6SL TIXU board customed with TPS65910 PMIC.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++#include "mx6_common.h"
++
++/* OCOTP Configs */
++/* #define CONFIG_CMD_IMXOTP */
++#ifdef CONFIG_CMD_IMXOTP
++#define CONFIG_IMX_OTP
++#define IMX_OTP_BASE                    OCOTP_BASE_ADDR
++#define IMX_OTP_ADDR_MAX                0x7F
++#define IMX_OTP_DATA_ERROR_VAL          0xBADABADA
++#define IMX_OTPWRITE_ENABLED
++#endif
++
++#ifdef CONFIG_SPL
++#define CONFIG_SPL_LIBCOMMON_SUPPORT
++#define CONFIG_SPL_MMC_SUPPORT
++#include "imx6_spl.h"
++#endif
++
++#define MACH_TYPE_MX6SLTIXU		4307
++#define CONFIG_MACH_TYPE		MACH_TYPE_MX6SLTIXU
++#define CONFIG_CMD_MEMTEST
++/* Size of malloc() pool */
++#define CONFIG_SYS_MALLOC_LEN		(3 * SZ_1M)
++
++#define CONFIG_BOARD_EARLY_INIT_F
++
++#define CONFIG_MXC_UART
++#define CONFIG_MXC_UART_BASE		UART1_IPS_BASE_ADDR
++
++/* MMC Configs */
++#define CONFIG_FSL_ESDHC
++#define CONFIG_FSL_USDHC
++#define CONFIG_SYS_FSL_ESDHC_ADDR      0
++#define CONFIG_MMC
++#define CONFIG_CMD_MMC
++#define CONFIG_GENERIC_MMC
++
++#define CONFIG_CMD_FAT
++#define CONFIG_DOS_PARTITION
++
++/* I2C Configs */
++#define CONFIG_CMD_I2C
++#define CONFIG_SYS_I2C
++#define CONFIG_SYS_I2C_MXC
++#define CONFIG_SYS_I2C_MXC_I2C1		/* enable I2C bus 1 */
++#define CONFIG_SYS_I2C_MXC_I2C2		/* enable I2C bus 2 */
++#define CONFIG_SYS_I2C_MXC_I2C3		/* enable I2C bus 3 */
++#define CONFIG_SYS_I2C_SPEED		  100000
++
++/* PMIC */
++#define CONFIG_POWER
++#define CONFIG_POWER_I2C
++#define CONFIG_POWER_TPS65910
++#define CONFIG_POWER_TPS65910_I2C_ADDR	0x12
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++#define CONFIG_FEC_MXC
++#define CONFIG_MII
++#define IMX_FEC_BASE			ENET_BASE_ADDR
++#define CONFIG_FEC_XCV_TYPE		RMII
++#define CONFIG_ETHPRIME			"FEC"
++#define CONFIG_FEC_MXC_PHYADDR		0
++
++#define CONFIG_PHYLIB
++#define CONFIG_PHY_SMSC
++
++#define CONFIG_EXTRA_ENV_SETTINGS \
++	"script=boot.scr\0" \
++	"image=uImage\0" \
++	"console=ttymxc0\0" \
++	"uimage=uImage\0" \
++	"fdt_high=0xffffffff\0" \
++	"initrd_high=0xffffffff\0" \
++	"ethaddr=00:50:C2:BC:C0:F2\0" \
++	"fdt_file=imx6sl-tixu.dtb\0" \
++	"fdt_addr=0x88000000\0" \
++	"boot_fdt=try\0" \
++	"ip_dyn=yes\0" \
++	"mmcdev=0\0" \
++	"mmcpart=1\0" \
++	"mmcroot=/dev/mmcblk0p2 rootwait rw\0" \
++	"mmcargs=setenv bootargs console=${console},${baudrate} " \
++		"root=${mmcroot}\0" \
++	"loadbootscript=" \
++		"fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} ${script};\0" \
++	"bootscript=echo Running bootscript from mmc ...; " \
++		"source\0" \
++	"loadimage=fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} ${image}\0" \
++	"loadfdt=fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}\0" \
++	"mmcboot=echo Booting from mmc ...; " \
++		"run mmcargs; " \
++		"run loadfdt; " \
++		"run loadimage; " \
++		"bootm ${loadaddr} - ${fdt_addr}\0" \
++	"netargs=setenv bootargs console=${console},${baudrate} " \
++		"root=/dev/nfs " \
++	"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0" \
++		"netboot=echo Booting from net ...; " \
++		"run netargs; " \
++		"if test ${ip_dyn} = yes; then " \
++			"setenv get_cmd dhcp; " \
++		"else " \
++			"setenv get_cmd tftp; " \
++		"fi; " \
++		"${get_cmd} ${image}; " \
++		"if test ${boot_fdt} = yes || test ${boot_fdt} = try; then " \
++			"if ${get_cmd} ${fdt_addr} ${fdt_file}; then " \
++				"bootm ${loadaddr} - ${fdt_addr}; " \
++			"else " \
++				"if test ${boot_fdt} = try; then " \
++					"bootz; " \
++				"else " \
++					"echo WARN: Cannot load the DT; " \
++				"fi; " \
++			"fi; " \
++		"else " \
++			"bootz; " \
++		"fi;\0" \
++	"bootargs_base=setenv bootargs console=ttymxc0,115200\0" \
++	"bootargs_spi=setenv bootargs ${bootargs} "     \
++		"root=/dev/ram rw ramdisk_size=64000\0" \
++	"bootcmd_spi=run bootargs_base bootargs_spi;" \
++	"sf probe; sf read 0x82000000 0x100000 0x400000;" \
++	"sf read 0x88000000 0x1900000 0x20000;" \
++	"sf read 0x82600000 0x0500000 0x1400000; bootm 0x82000000 0x82600000 0x88000000\0" \
++	"bootcmd=run mmcboot\0" \
++
++#define CONFIG_BOOTCOMMAND \
++	   "mmc dev ${mmcdev};" \
++	   "mmc dev ${mmcdev}; if mmc rescan; then " \
++		   "if run loadbootscript; then " \
++			   "run bootscript; " \
++		   "else " \
++			   "if run loadimage; then " \
++				   "run mmcboot; " \
++			   "else run netboot; " \
++			   "fi; " \
++		   "fi; " \
++	   "else run netboot; fi"
++
++/* Miscellaneous configurable options */
++#define CONFIG_SYS_MEMTEST_START	0x80000000
++#define CONFIG_SYS_MEMTEST_END		(CONFIG_SYS_MEMTEST_START + SZ_512M)
++
++#define CONFIG_STACKSIZE		SZ_128K
++
++/* Physical Memory Map */
++#define CONFIG_NR_DRAM_BANKS		1
++#define PHYS_SDRAM			MMDC0_ARB_BASE_ADDR
++#define PHYS_SDRAM_SIZE			SZ_512M
++
++#define CONFIG_SYS_SDRAM_BASE		PHYS_SDRAM
++#define CONFIG_SYS_INIT_RAM_ADDR	IRAM_BASE_ADDR
++#define CONFIG_SYS_INIT_RAM_SIZE	IRAM_SIZE
++
++#define CONFIG_SYS_INIT_SP_OFFSET \
++	(CONFIG_SYS_INIT_RAM_SIZE - GENERATED_GBL_DATA_SIZE)
++#define CONFIG_SYS_INIT_SP_ADDR \
++	(CONFIG_SYS_INIT_RAM_ADDR + CONFIG_SYS_INIT_SP_OFFSET)
++
++/* Environment organization */
++#define CONFIG_ENV_SIZE			SZ_8K
++
++#define CONFIG_SYS_BOOT_SPINOR
++#if defined CONFIG_SYS_BOOT_SPINOR
++#define CONFIG_ENV_IS_IN_SPI_FLASH
++#define CONFIG_ENV_OFFSET               (768 * 1024)
++#define CONFIG_ENV_SECT_SIZE            (64 * 1024)
++#define CONFIG_ENV_SPI_BUS              CONFIG_SF_DEFAULT_BUS
++#define CONFIG_ENV_SPI_CS               CONFIG_SF_DEFAULT_CS
++#define CONFIG_ENV_SPI_MODE             CONFIG_SF_DEFAULT_MODE
++#define CONFIG_ENV_SPI_MAX_HZ           20000000
++#else
++#define CONFIG_ENV_OFFSET		(8 * SZ_64K)
++#define CONFIG_ENV_IS_IN_MMC
++#endif
++
++#define CONFIG_CMD_SPI
++#define CONFIG_CMD_SF
++#ifdef CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH
++#define CONFIG_SPI_FLASH_BAR
++#define CONFIG_SPI_FLASH_STMICRO
++#define CONFIG_MXC_SPI
++#define CONFIG_SF_DEFAULT_BUS		0
++#define CONFIG_SF_DEFAULT_CS		0
++#define CONFIG_SF_DEFAULT_SPEED		20000000
++#define CONFIG_SF_DEFAULT_MODE		SPI_MODE_0
++#endif
++
++/* USB Configs */
++#define CONFIG_CMD_USB
++#ifdef CONFIG_CMD_USB
++#define CONFIG_USB_EHCI
++#define CONFIG_USB_EHCI_MX6
++#define CONFIG_USB_STORAGE
++#define CONFIG_EHCI_HCD_INIT_AFTER_RESET
++#define CONFIG_USB_HOST_ETHER
++#define CONFIG_USB_ETHER_ASIX
++#define CONFIG_MXC_USB_PORTSC		(PORT_PTS_UTMI | PORT_PTS_PTW)
++#define CONFIG_MXC_USB_FLAGS		0
++#define CONFIG_USB_MAX_CONTROLLER_COUNT	2
++#endif
++
++#define CONFIG_SYS_FSL_USDHC_NUM	1
++#if defined(CONFIG_ENV_IS_IN_MMC)
++#define CONFIG_SYS_MMC_ENV_DEV		1	/* SDHC2*/
++#endif
++
++#define CONFIG_IMX_THERMAL
++
++#endif				/* __CONFIG_H */

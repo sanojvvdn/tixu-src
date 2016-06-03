@@ -1,0 +1,513 @@
+diff --git a/arch/arm/mach-imx/mach-imx6q.c b/arch/arm/mach-imx/mach-imx6q.c
+index 8cab29f..1707222 100644
+--- a/arch/arm/mach-imx/mach-imx6q.c
++++ b/arch/arm/mach-imx/mach-imx6q.c
+@@ -493,12 +493,18 @@ static void __init imx6q_init_machine(void)
+ #define OCOTP_CFG3_SPEED_996MHZ		0x2
+ #define OCOTP_CFG3_SPEED_852MHZ		0x1
+ 
+-static void __init imx6q_opp_check_speed_grading(struct device *cpu_dev)
++static void __init imx6q_opp_check_speed_grading(void)
+ {
++	struct device *cpu_dev = get_cpu_device(0);
+ 	struct device_node *np;
+ 	void __iomem *base;
+ 	u32 val;
+ 
++	if (!cpu_dev) {
++		pr_warn("failed to get cpu0 device\n");
++		return;
++	}
++
+ 	np = of_find_compatible_node(NULL, NULL, "fsl,imx6q-ocotp");
+ 	if (!np) {
+ 		pr_warn("failed to find ocotp node\n");
+@@ -545,32 +551,6 @@ put_node:
+ 	of_node_put(np);
+ }
+ 
+-static void __init imx6q_opp_init(void)
+-{
+-	struct device_node *np;
+-	struct device *cpu_dev = get_cpu_device(0);
+-
+-	if (!cpu_dev) {
+-		pr_warn("failed to get cpu0 device\n");
+-		return;
+-	}
+-	np = of_node_get(cpu_dev->of_node);
+-	if (!np) {
+-		pr_warn("failed to find cpu0 node\n");
+-		return;
+-	}
+-
+-	if (of_init_opp_table(cpu_dev)) {
+-		pr_warn("failed to init OPP table\n");
+-		goto put_node;
+-	}
+-
+-	imx6q_opp_check_speed_grading(cpu_dev);
+-
+-put_node:
+-	of_node_put(np);
+-}
+-
+ static struct platform_device imx6q_cpufreq_pdev = {
+ 	.name = "imx6q-cpufreq",
+ };
+@@ -587,7 +567,7 @@ static void __init imx6q_init_late(void)
+ 		imx6q_cpuidle_init();
+ 
+ 	if (IS_ENABLED(CONFIG_ARM_IMX6Q_CPUFREQ)) {
+-		imx6q_opp_init();
++		imx6q_opp_check_speed_grading();	
+ 		platform_device_register(&imx6q_cpufreq_pdev);
+ 	}
+ 
+diff --git a/arch/arm/mach-imx/mach-imx6sx.c b/arch/arm/mach-imx/mach-imx6sx.c
+index eda08df..0eee77b 100755
+--- a/arch/arm/mach-imx/mach-imx6sx.c
++++ b/arch/arm/mach-imx/mach-imx6sx.c
+@@ -299,6 +299,8 @@ static void __init imx6sx_init_late(void)
+ 		imx6sx_arm2_flexcan_fixup();
+ 
+ 	imx6sx_cpuidle_init();
++	if(IS_ENABLED(CONFIG_ARM_IMX6Q_CPUFREQ))
++               platform_device_register_simple("imx6q-cpufreq", -1, NULL, 0);	
+ }
+ 
+ static void __init imx6sx_map_io(void)
+diff --git a/drivers/mfd/Makefile b/drivers/mfd/Makefile
+index c0aedc3..30b400f 100644
+--- a/drivers/mfd/Makefile
++++ b/drivers/mfd/Makefile
+@@ -62,7 +62,7 @@ obj-$(CONFIG_TPS6105X)		+= tps6105x.o
+ obj-$(CONFIG_TPS65010)		+= tps65010.o
+ obj-$(CONFIG_TPS6507X)		+= tps6507x.o
+ obj-$(CONFIG_MFD_TPS65217)	+= tps65217.o
+-obj-$(CONFIG_MFD_TPS65910)	+= tps65910.o
++obj-$(CONFIG_MFD_TPS65910)	+= tps65910.o tps65910-irq.o
+ tps65912-objs                   := tps65912-core.o tps65912-irq.o
+ obj-$(CONFIG_MFD_TPS65912)	+= tps65912.o
+ obj-$(CONFIG_MFD_TPS65912_I2C)	+= tps65912-i2c.o
+diff --git a/drivers/mfd/tps65910-irq.c b/drivers/mfd/tps65910-irq.c
+index e69de29..83a915e 100644
+--- a/drivers/mfd/tps65910-irq.c
++++ b/drivers/mfd/tps65910-irq.c
+@@ -0,0 +1,188 @@
++/*
++ * tps65910-irq.c  --  TI TPS6591x
++ *
++ * Copyright 2010 Texas Instruments Inc.
++ *
++ * Author: Graeme Gregory <gg@slimlogic.co.uk>
++ * Author: Jorge Eduardo Candelaria <jedu@slimlogic.co.uk>
++ *
++ *  This program is free software; you can redistribute it and/or modify it
++ *  under  the terms of the GNU General  Public License as published by the
++ *  Free Software Foundation;  either version 2 of the License, or (at your
++ *  option) any later version.
++ *
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/bug.h>
++#include <linux/device.h>
++#include <linux/interrupt.h>
++#include <linux/irq.h>
++#include <linux/gpio.h>
++#include <linux/mfd/tps65910.h>
++
++static inline int irq_to_tps65910_irq(struct tps65910 *tps65910,
++		int irq)
++{
++	return (irq - tps65910->irq_base);
++}
++
++/*
++ * This is a threaded IRQ handler so can access I2C/SPI.  Since all
++ * interrupts are clear on read the IRQ line will be reasserted and
++ * the physical IRQ will be handled again if another interrupt is
++ * asserted while we run - in the normal course of events this is a
++ * rare occurrence so we save I2C/SPI reads.  We're also assuming that
++ * it's rare to get lots of interrupts firing simultaneously so try to
++ * minimise I/O.
++ */
++static irqreturn_t tps65910_irq(int irq, void *irq_data)
++{
++	struct tps65910 *tps65910 = irq_data;
++	u16 irq_sts;
++	u16 irq_mask;
++	u8 reg;
++	int i;
++
++	tps65910->read(tps65910, TPS65910_INT_STS, 1, &reg);
++	irq_sts = reg;
++	tps65910->read(tps65910, TPS65910_INT_STS2, 1, &reg);
++	irq_sts |= reg << 8;
++
++	tps65910->read(tps65910, TPS65910_INT_MSK, 1, &reg);
++	irq_mask = reg;
++	tps65910->read(tps65910, TPS65910_INT_STS2, 1, &reg);
++	irq_mask |= reg << 8;
++
++	irq_sts &= ~irq_mask;
++
++	if (!irq_sts)
++		return IRQ_NONE;
++
++	for (i = 0; i < TPS65910_NUM_IRQ; i++) {
++
++		if (!(irq_sts & (1 << i)))
++			continue;
++
++		handle_nested_irq(tps65910->irq_base + i);
++	}
++
++	/* Write the STS register back to clear IRQs we handled */
++	reg = irq_sts & 0xFF;
++	tps65910->write(tps65910, TPS65910_INT_STS, 1, &reg);
++	reg = irq_sts >> 8;
++	tps65910->write(tps65910, TPS65910_INT_STS2, 1, &reg);
++
++	return IRQ_HANDLED;
++}
++
++static void tps65910_irq_lock(unsigned int irq)
++{
++	struct tps65910 *tps65910 = irq_get_chip_data(irq);
++
++	mutex_lock(&tps65910->irq_lock);
++}
++
++static void tps65910_irq_sync_unlock(unsigned int irq)
++{
++	struct tps65910 *tps65910 = irq_get_chip_data(irq);
++	u16 reg_mask;
++	u8 reg;
++
++	tps65910->read(tps65910, TPS65910_INT_MSK, 1, &reg);
++	reg_mask = reg;
++	tps65910->read(tps65910, TPS65910_INT_MSK2, 1, &reg);
++	reg_mask |= reg << 8;
++
++	if (tps65910->irq_mask != reg_mask) {
++		reg = tps65910->irq_mask & 0xFF;
++		tps65910->write(tps65910, TPS65910_INT_MSK, 1, &reg);
++		reg = tps65910->irq_mask >> 8;
++		tps65910->write(tps65910, TPS65910_INT_MSK2, 1, &reg);
++	}
++	mutex_unlock(&tps65910->irq_lock);
++}
++
++static void tps65910_irq_enable(unsigned int irq)
++{
++	struct tps65910 *tps65910 = irq_get_chip_data(irq);
++
++	tps65910->irq_mask &= ~( 1 << irq_to_tps65910_irq(tps65910, irq));
++}
++
++static void tps65910_irq_disable(unsigned int irq)
++{
++	struct tps65910 *tps65910 = irq_get_chip_data(irq);
++
++	tps65910->irq_mask |= ( 1 << irq_to_tps65910_irq(tps65910, irq));
++}
++
++static struct irq_chip tps65910_irq_chip = {
++	.name = "tps65910",
++	.irq_bus_lock = tps65910_irq_lock,
++	.irq_bus_sync_unlock = tps65910_irq_sync_unlock,
++	.irq_disable = tps65910_irq_disable,
++	.irq_enable = tps65910_irq_enable,
++};
++
++int tps65910_irq_init(struct tps65910 *tps65910, int irq,
++		struct tps65910_platform_data *pdata)
++{
++	int ret, cur_irq;
++	int flags = IRQF_ONESHOT;
++	u8 reg;
++
++	if (!irq) {
++		dev_warn(tps65910->dev, "No interrupt support, no core IRQ\n");
++		return -EINVAL;
++	}
++
++	if (!pdata || !pdata->irq_base) {
++		dev_warn(tps65910->dev, "No interrupt support, no IRQ base\n");
++		return -EINVAL;
++	}
++
++	/* Mask top level interrupts */
++	reg = 0xFF;
++	tps65910->write(tps65910, TPS65910_INT_MSK, 1, &reg);
++	reg = 0x03;
++	tps65910->write(tps65910, TPS65910_INT_MSK2, 1, &reg);
++
++	mutex_init(&tps65910->irq_lock);
++	tps65910->chip_irq = irq;
++	tps65910->irq_base = pdata->irq_base;
++
++	/* Register with genirq */
++	for (cur_irq = tps65910->irq_base;
++			cur_irq < TPS65910_NUM_IRQ + tps65910->irq_base;
++			cur_irq++) {
++		irq_set_chip_data(cur_irq, tps65910);
++		irq_set_chip_and_handler(cur_irq, &tps65910_irq_chip,
++				handle_edge_irq);
++		irq_set_nested_thread(cur_irq, 1);
++
++		/* ARM needs us to explicitly flag the IRQ as valid
++		 * and will set them noprobe when we do so. */
++#ifdef CONFIG_ARM
++		set_irq_flags(cur_irq, IRQF_VALID);
++#else
++		set_irq_noprobe(cur_irq);
++#endif
++	}
++
++	ret = request_threaded_irq(irq, NULL, tps65910_irq, flags,
++			"tps65910", tps65910);
++	if (ret != 0)
++		dev_err(tps65910->dev, "Failed to request IRQ: %d\n", ret);
++
++	return ret;
++}
++
++int tps65910_irq_exit(struct tps65910 *tps65910)
++{
++	free_irq(tps65910->chip_irq, tps65910);
++	return 0;
++}
++
+diff --git a/drivers/mfd/tps65910.c b/drivers/mfd/tps65910.c
+index d657331..8e439b4 100644
+--- a/drivers/mfd/tps65910.c
++++ b/drivers/mfd/tps65910.c
+@@ -379,7 +379,7 @@ err_sleep_init:
+ }
+ 
+ #ifdef CONFIG_OF
+-static struct of_device_id tps65910_of_match[] = {
++static const struct of_device_id tps65910_of_match[] = {
+ 	{ .compatible = "ti,tps65910", .data = (void *)TPS65910},
+ 	{ .compatible = "ti,tps65911", .data = (void *)TPS65911},
+ 	{ },
+@@ -387,7 +387,7 @@ static struct of_device_id tps65910_of_match[] = {
+ MODULE_DEVICE_TABLE(of, tps65910_of_match);
+ 
+ static struct tps65910_board *tps65910_parse_dt(struct i2c_client *client,
+-						int *chip_id)
++						unsigned long *chip_id)
+ {
+ 	struct device_node *np = client->dev.of_node;
+ 	struct tps65910_board *board_info;
+@@ -401,7 +401,7 @@ static struct tps65910_board *tps65910_parse_dt(struct i2c_client *client,
+ 		return NULL;
+ 	}
+ 
+-	*chip_id  = (int)match->data;
++	*chip_id  = (unsigned long)match->data;
+ 
+ 	board_info = devm_kzalloc(&client->dev, sizeof(*board_info),
+ 			GFP_KERNEL);
+@@ -431,7 +431,7 @@ static struct tps65910_board *tps65910_parse_dt(struct i2c_client *client,
+ #else
+ static inline
+ struct tps65910_board *tps65910_parse_dt(struct i2c_client *client,
+-					 int *chip_id)
++					 unsigned long *chip_id)
+ {
+ 	return NULL;
+ }
+@@ -453,14 +453,14 @@ static void tps65910_power_off(void)
+ }
+ 
+ static int tps65910_i2c_probe(struct i2c_client *i2c,
+-					const struct i2c_device_id *id)
++			      const struct i2c_device_id *id)
+ {
+ 	struct tps65910 *tps65910;
+ 	struct tps65910_board *pmic_plat_data;
+ 	struct tps65910_board *of_pmic_plat_data = NULL;
+ 	struct tps65910_platform_data *init_data;
+ 	int ret = 0;
+-	int chip_id = id->driver_data;
++	unsigned long chip_id = id->driver_data;
+ 
+ 	pmic_plat_data = dev_get_platdata(&i2c->dev);
+ 
+@@ -486,6 +486,11 @@ static int tps65910_i2c_probe(struct i2c_client *i2c,
+ 	tps65910->i2c_client = i2c;
+ 	tps65910->id = chip_id;
+ 
++	/* Work around silicon erratum SWCZ010: the tps65910 may miss the
++	 * first I2C transfer. So issue a dummy transfer before the first
++	 * real transfer.
++	 */
++	i2c_master_send(i2c, "", 1);
+ 	tps65910->regmap = devm_regmap_init_i2c(i2c, &tps65910_regmap_config);
+ 	if (IS_ERR(tps65910->regmap)) {
+ 		ret = PTR_ERR(tps65910->regmap);
+@@ -511,6 +516,7 @@ static int tps65910_i2c_probe(struct i2c_client *i2c,
+ 			      regmap_irq_get_domain(tps65910->irq_data));
+ 	if (ret < 0) {
+ 		dev_err(&i2c->dev, "mfd_add_devices failed: %d\n", ret);
++		tps65910_irq_exit(tps65910);
+ 		return ret;
+ 	}
+ 
+diff --git a/drivers/regulator/core.c b/drivers/regulator/core.c
+index 40359cb..c9eb4f2 100644
+--- a/drivers/regulator/core.c
++++ b/drivers/regulator/core.c
+@@ -844,13 +844,22 @@ static int machine_constraints_voltage(struct regulator_dev *rdev,
+ 	/* do we need to apply the constraint voltage */
+ 	if (rdev->constraints->apply_uV &&
+ 	    rdev->constraints->min_uV == rdev->constraints->max_uV) {
+-		ret = _regulator_do_set_voltage(rdev,
+-						rdev->constraints->min_uV,
+-						rdev->constraints->max_uV);
+-		if (ret < 0) {
+-			rdev_err(rdev, "failed to apply %duV constraint\n",
+-				 rdev->constraints->min_uV);
+-			return ret;
++		int current_uV = _regulator_get_voltage(rdev);
++		if (current_uV < 0) {
++			rdev_err(rdev, "failed to get the current voltage\n");
++			return current_uV;
++		}
++		if (current_uV < rdev->constraints->min_uV ||
++		    current_uV > rdev->constraints->max_uV) {
++			ret = _regulator_do_set_voltage(
++				rdev, rdev->constraints->min_uV,
++				rdev->constraints->max_uV);
++			if (ret < 0) {
++				rdev_err(rdev,
++					"failed to apply %duV constraint\n",
++					rdev->constraints->min_uV);
++				return ret;
++			}
+ 		}
+ 	}
+ 
+diff --git a/drivers/regulator/tps65910-regulator.c b/drivers/regulator/tps65910-regulator.c
+index f50dd84..e58b5a2 100644
+--- a/drivers/regulator/tps65910-regulator.c
++++ b/drivers/regulator/tps65910-regulator.c
+@@ -17,6 +17,7 @@
+ #include <linux/module.h>
+ #include <linux/init.h>
+ #include <linux/err.h>
++#include <linux/of.h>
+ #include <linux/platform_device.h>
+ #include <linux/regulator/driver.h>
+ #include <linux/regulator/machine.h>
+@@ -552,6 +553,12 @@ static int tps65910_get_voltage_sel(struct regulator_dev *dev)
+ 	return value;
+ }
+ 
++static int tps65910_get_voltage_vrtc(struct regulator_dev *dev)
++{
++	return dev->desc->volt_table[0];
++}
++
++
+ static int tps65910_get_voltage_vdd3(struct regulator_dev *dev)
+ {
+ 	return dev->desc->volt_table[0];
+@@ -760,7 +767,7 @@ static int tps65911_list_voltage(struct regulator_dev *dev, unsigned selector)
+ 	return (LDO_MIN_VOLT + selector * step_mv) * 1000;
+ }
+ 
+-/* Regulator ops (except VRTC) */
++/* Regulator ops  */
+ static struct regulator_ops tps65910_ops_dcdc = {
+ 	.is_enabled		= regulator_is_enabled_regmap,
+ 	.enable			= regulator_enable_regmap,
+@@ -774,6 +781,17 @@ static struct regulator_ops tps65910_ops_dcdc = {
+ 	.map_voltage		= regulator_map_voltage_ascend,
+ };
+ 
++static struct regulator_ops tps65910_ops_vrtc = {
++	.is_enabled		= regulator_is_enabled_regmap,
++	.enable			= regulator_enable_regmap,
++	.disable		= regulator_disable_regmap,
++	.set_mode		= tps65910_set_mode,
++	.get_mode		= tps65910_get_mode,
++	.get_voltage		= tps65910_get_voltage_vrtc,
++	.list_voltage		= regulator_list_voltage_table,
++	.map_voltage		= regulator_map_voltage_ascend,
++};
++
+ static struct regulator_ops tps65910_ops_vdd3 = {
+ 	.is_enabled		= regulator_is_enabled_regmap,
+ 	.enable			= regulator_enable_regmap,
+@@ -1017,7 +1035,7 @@ static struct tps65910_board *tps65910_parse_dt_reg_data(
+ 		return NULL;
+ 	}
+ 
+-	np = of_node_get(pdev->dev.parent->of_node);
++	np = pdev->dev.parent->of_node;
+ 	regulators = of_get_child_by_name(np, "regulators");
+ 	if (!regulators) {
+ 		dev_err(&pdev->dev, "regulator node not found\n");
+@@ -1050,7 +1068,7 @@ static struct tps65910_board *tps65910_parse_dt_reg_data(
+ 	*tps65910_reg_matches = matches;
+ 
+ 	for (idx = 0; idx < count; idx++) {
+-		if (!matches[idx].init_data || !matches[idx].of_node)
++		if (!matches[idx].of_node)
+ 			continue;
+ 
+ 		pmic_plat_data->tps65910_pmic_init_data[idx] =
+@@ -1185,6 +1203,10 @@ static int tps65910_probe(struct platform_device *pdev)
+ 				tps65910_chip_id(tps65910) == TPS65910) {
+ 			pmic->desc[i].ops = &tps65910_ops_vbb;
+ 			pmic->desc[i].volt_table = info->voltage_table;
++		} else if (i == TPS65910_REG_VRTC && tps65910_chip_id(tps65910) == TPS65910){
++                                pmic->desc[i].ops = &tps65910_ops_vrtc;
++                 	        pmic->desc[i].volt_table = info->voltage_table;
++ 
+ 		} else {
+ 			if (tps65910_chip_id(tps65910) == TPS65910) {
+ 				pmic->desc[i].ops = &tps65910_ops;
+@@ -1210,7 +1232,7 @@ static int tps65910_probe(struct platform_device *pdev)
+ 		pmic->desc[i].enable_mask = TPS65910_SUPPLY_STATE_ENABLED;
+ 
+ 		config.dev = tps65910->dev;
+-		config.init_data = reg_data;
++		config.init_data = pmic_plat_data->tps65910_pmic_init_data[i];
+ 		config.driver_data = pmic;
+ 		config.regmap = tps65910->regmap;
+ 
+diff --git a/include/linux/mfd/tps65910.h b/include/linux/mfd/tps65910.h
+index 16c2335..aca0777 100644
+--- a/include/linux/mfd/tps65910.h
++++ b/include/linux/mfd/tps65910.h
+@@ -893,6 +893,7 @@ struct tps65910 {
+ 	struct i2c_client *i2c_client;
+ 	struct regmap *regmap;
+ 	unsigned int id;
++	struct mutex io_mutex;
+ 
+ 	/* Client devices */
+ 	struct tps65910_pmic *pmic;
+@@ -905,6 +906,14 @@ struct tps65910 {
+ 	/* IRQ Handling */
+ 	int chip_irq;
+ 	struct regmap_irq_chip_data *irq_data;
++	int (*read)(struct tps65910 *tps65910, u8 reg, int size, void *dest);
++        int (*write)(struct tps65910 *tps65910, u8 reg, int size, void *src);
++	struct gpio_chip gpio;
++	struct mutex irq_lock;
++	int irq_base;
++	int irq_num;
++	u32 irq_mask;
++
+ };
+ 
+ struct tps65910_platform_data {

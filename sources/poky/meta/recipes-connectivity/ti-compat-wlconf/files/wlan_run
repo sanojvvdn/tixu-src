@@ -1,0 +1,17 @@
+#!/bin/sh
+
+mount -t jffs2 /dev/mtdblock6 /mnt
+
+if [ -f /mnt/wl18xx-conf.bin ]
+then
+       chmod 777 /usr/bin/board_wlan.sh
+       /bin/sh /usr/bin/board_wlan.sh
+       if [ $? -ne 0 ]; then
+       echo "Initialization failed"
+       exit
+       fi
+else
+       chmod 777 /usr/bin/board_cal.sh
+       /bin/sh /usr/bin/board_cal.sh
+fi
+

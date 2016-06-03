@@ -1,0 +1,28 @@
+DESCRIPTION = "Shared Transport Line Discipline User Mode initialisation Manager Daemon"
+LICENSE = "GPLv2+"
+LIC_FILES_CHKSUM = "file://uim.c;beginline=1;endline=18;md5=9f0bbfbc10c67689e81a523e2976c31e"
+
+INITSCRIPT_NAME = "uim-sysfs"
+INITSCRIPT_PARAMS = "defaults 03"
+
+inherit update-rc.d
+
+SRCREV = "a75f45be2d5c74fc1dd913d08afc30f09a230aa9"
+SRC_URI = "git://git.ti.com/ti-bt/uim.git"
+
+S = "${WORKDIR}/git"
+
+EXTRA_OEMAKE = "CC=${TARGET_PREFIX}gcc"
+
+do_compile() {
+	make
+}
+
+do_install() {
+	install -d ${D}${bindir}
+	install -m 0755 ${S}/uim ${D}${bindir}
+	install -d ${D}${sysconfdir}/init.d
+	install -m 0755 ${S}/scripts/uim-sysfs ${D}${sysconfdir}/init.d
+	install -d ${D}${sysconfdir}/rcS.d
+	ln -sf ../init.d/uim-sysfs ${D}${sysconfdir}/rcS.d/S03uim-sysfs 
+}

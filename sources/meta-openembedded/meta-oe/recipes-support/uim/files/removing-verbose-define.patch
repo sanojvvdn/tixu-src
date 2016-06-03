@@ -1,0 +1,12 @@
+diff --git a/uim.h b/uim.h
+index 370b4d4..57abcf2 100644
+--- a/uim.h
++++ b/uim.h
+@@ -71,7 +71,6 @@
+ #define BAUD_RATE_SYSFS		baud_rate_sysfs
+ #define FLOW_CTRL_SYSFS		flow_cntrl_sysfs
+ 
+-#define VERBOSE
+ /*Debug logs*/
+ #define UIM_ERR(fmt, arg...)  printf("uim:"fmt"\n" , ##arg)
+ #if defined(UIM_DEBUG)		/* limited debug messages */
