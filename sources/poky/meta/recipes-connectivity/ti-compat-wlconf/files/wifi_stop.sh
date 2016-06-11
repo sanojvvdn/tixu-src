@@ -6,7 +6,7 @@ then
 else
 	ifconfig wlan0 0.0.0.0
         ifconfig wlan0 down
-        killall hostapd
-        killall wpa_supplicant
+        killall hostapd > /dev/null 2>&1
+        killall wpa_supplicant > /dev/null 2>&1
 fi
 

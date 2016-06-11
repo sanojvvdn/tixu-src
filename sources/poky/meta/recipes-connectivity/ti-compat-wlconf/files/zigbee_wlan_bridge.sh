@@ -6,6 +6,7 @@
 # Default-Start:     S
 # Default-Stop:
 # Short-Description: Starts the applications for TIXU board functionality
+wifi_stop.sh > /dev/null 2&>1
 cd /home/root/zigbee/servers/
 ./zigbeeHAgw bbb > /dev/null 2&>1 &
 sleep 15

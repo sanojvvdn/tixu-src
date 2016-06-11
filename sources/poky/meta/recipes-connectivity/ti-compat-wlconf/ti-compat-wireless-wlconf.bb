@@ -31,7 +31,6 @@ SRC_URI = "	file://WL8_System_parameters.ini \
 		file://wlan_eth_bridge_create.sh \
 		file://zigbee_stop.sh \
 		file://hostapd_open.conf \ 
-		file://open_ssid \
 		file://zigbee_wlan_bridge.sh \
 		file://blinking.sh \
            "
@@ -83,7 +82,6 @@ do_install() {
 	install -m 0755 ${WORKDIR}/obexd ${D}${bindir}
         install -m 0755 ${WORKDIR}/zigbee_stop.sh ${D}${bindir}
 	install -m 0755 ${WORKDIR}/wlan_eth_bridge_create.sh ${D}${bindir}
-	install -m 0755 ${WORKDIR}/open_ssid ${D}${bindir}
 	install -m 0755 ${WORKDIR}/zigbee_wlan_bridge.sh ${D}${bindir}
 	install -m 0755 ${WORKDIR}/blinking.sh ${D}${bindir}
 }

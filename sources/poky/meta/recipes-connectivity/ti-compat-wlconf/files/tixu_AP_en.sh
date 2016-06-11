@@ -5,6 +5,10 @@ then
 else
 	ifconfig wlan0 10.4.30.34 netmask 255.255.255.0 up
 	sleep 3
+fi
+if [ $(ps | grep hostapd | grep -vi grep | wc -l) -eq 0 ]
+then
+	ifconfig wlan0 10.4.30.34 netmask 255.255.255.0
 	while :
 	do
 	echo "press 1-secure mode 2-open mode"
@@ -25,4 +29,3 @@ else
 	udhcpd /etc/udhcpd.conf
 	sleep 4
 fi
-
