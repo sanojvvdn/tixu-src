@@ -1,0 +1,502 @@
+diff --git a/arch/arm/boot/dts/imx6sl-tixu.dts b/arch/arm/boot/dts/imx6sl-tixu.dts
+index 0db5ab0..c43fe2b 100644
+--- a/arch/arm/boot/dts/imx6sl-tixu.dts
++++ b/arch/arm/boot/dts/imx6sl-tixu.dts
+@@ -230,21 +230,14 @@
+ 		reg = <0x12>;
+ 		interrupt-parent = <&intc>;
+ 		interrupts = <3 21 IRQ_TYPE_LEVEL_LOW>;
+-/*
+-		#gpio-cells = <2>;
+-                gpio-controller;
+-		ti,vmbch-threshold = <0>;
+-		ti,vmbch2-threshold = <0>;
+ 		ti,en-ck32k-xtal;
+-*/
+-                #interrupt-cells = <2>;
+-                interrupt-controller;
+-
+-                ti,system-power-controller;
++        #interrupt-cells = <2>;
++        interrupt-controller;
++        ti,system-power-controller;
+ 
+ 		vcc1-supply = <&vbat>;                          // VDD1 input
+-	        vcc2-supply = <&vbat>;                          // VDD2 input
+-	        vcc3-supply = <&vbat>;                          // VAUX33 and VMMC input
++        vcc2-supply = <&vbat>;                          // VDD2 input
++        vcc3-supply = <&vbat>;                          // VAUX33 and VMMC input
+ 		vcc4-supply = <&vbat>;                          // VAUX1 and VAUX2 input
+ 		vcc5-supply = <&vbat>;                          // VPLL and VDAC input
+ 		vcc6-supply = <&vbat>;                          // VDIG1 and VDIG2 input
+@@ -281,6 +274,7 @@
+ 				regulator-name = "vdd1_reg";
+                                 regulator-min-microvolt = <600000>;
+                                 regulator-max-microvolt = <1500000>;
++				regulator-boot-on;
+                                 regulator-always-on;
+ 				ti,regulator-ext-sleep-control = <0>;
+                         };
+@@ -290,8 +284,9 @@
+ 				regulator-name = "vdd2_reg";
+                                 regulator-min-microvolt = <600000>;
+                                 regulator-max-microvolt = <1500000>;
++				regulator-boot-on;
+                                 regulator-always-on;
+-				ti,regulator-ext-sleep-control = <2>;
++				ti,regulator-ext-sleep-control = <0>;
+ 
+                         };
+ 
+@@ -301,7 +296,8 @@
+                                 regulator-min-microvolt = <5000000>;
+                                 regulator-max-microvolt = <5000000>;
+ 				regulator-boot-on;
+-				ti,regulator-ext-sleep-control = <4>;
++                                regulator-always-on;
++				ti,regulator-ext-sleep-control = <0>;
+                         };
+ 
+                         vdig1_reg: regulator@5 {
+@@ -329,6 +325,8 @@
+ 				regulator-name = "vpll_reg";
+                                 regulator-min-microvolt = <1000000>;
+                                 regulator-max-microvolt = <2500000>;
++				regulator-boot-on;
++                                regulator-always-on;
+                         };
+ 			
+ 			vdac_reg: regulator@8 {
+@@ -337,6 +335,8 @@
+                                 regulator-min-microvolt = <1800000>;
+                                 regulator-max-microvolt = <2850000>;
+ 				ti,regulator-ext-sleep-control = <0>;
++				regulator-boot-on;
++                                regulator-always-on;
+                         };
+ 
+ 			vaux1_reg: regulator@9 {
+@@ -344,6 +344,7 @@
+ 				regulator-name = "vaux1_reg";
+                                 regulator-min-microvolt = <1800000>;
+                                 regulator-max-microvolt = <2850000>;
++				regulator-boot-on;
+                                 regulator-always-on;
+ 				ti,regulator-ext-sleep-control = <0>;
+                         };	
+@@ -353,6 +354,8 @@
+ 				regulator-name = "vaux2_reg";
+                                 regulator-min-microvolt = <1800000>;
+                                 regulator-max-microvolt = <3300000>;
++                               
++				regulator-boot-on;
+                                 regulator-always-on;
+ 				ti,regulator-ext-sleep-control = <0>;
+                         };
+@@ -362,6 +365,7 @@
+ 				regulator-name = "vaux33_reg";
+                                 regulator-min-microvolt = <1800000>;
+                                 regulator-max-microvolt = <3300000>;
++				regulator-boot-on;
+                                 regulator-always-on;
+ 				ti,regulator-ext-sleep-control = <1>;
+                         };
+@@ -371,13 +375,15 @@
+ 				regulator-name = "vmmc_reg";
+                                 regulator-min-microvolt = <1800000>;
+                                 regulator-max-microvolt = <3300000>;
++				regulator-boot-on;
++                                regulator-always-on;
+ 				ti,regulator-ext-sleep-control = <0>;
+                         };
+ 			
+ 			vbb_reg: regulator@13 {
+ 				regulator-compatible = "vbb";
+ 				regulator-name = "vbb_reg";
+-				regulator-always-on;
++                                regulator-always-on;
+ 				ti,regulator-ext-sleep-control = <0>;
+ 
+ 			};
+diff --git a/arch/arm/boot/dts/imx6sl.dtsi b/arch/arm/boot/dts/imx6sl.dtsi
+index 8ae0966..2b261d3 100644
+--- a/arch/arm/boot/dts/imx6sl.dtsi
++++ b/arch/arm/boot/dts/imx6sl.dtsi
+@@ -48,13 +48,13 @@
+ 			next-level-cache = <&L2>;
+ 			operating-points = <
+ 				/* kHz    uV */
+-				996000  1275000
++				996000  1375000
+ 				792000  1175000
+ 				396000  975000
+ 			>;
+ 			fsl,soc-operating-points = <
+ 				/* ARM kHz      SOC-PU uV */
+-				996000          1225000
++				996000          1275000
+ 				792000          1175000
+ 				396000          1175000
+ 			>;
+diff --git a/drivers/base/cpu.c b/drivers/base/cpu.c
+index f48370d..a7d3d94 100644
+--- a/drivers/base/cpu.c
++++ b/drivers/base/cpu.c
+@@ -15,6 +15,7 @@
+ #include <linux/percpu.h>
+ #include <linux/acpi.h>
+ #include <linux/of.h>
++#include <linux/pm_opp.h>
+ 
+ #include "base.h"
+ 
+@@ -313,11 +314,19 @@ int register_cpu(struct cpu *cpu, int num)
+ 	if (cpu->hotpluggable)
+ 		cpu->dev.groups = hotplugable_cpu_attr_groups;
+ 	error = device_register(&cpu->dev);
+-	if (!error)
++	if (!error){
+ 		per_cpu(cpu_sys_devices, num) = &cpu->dev;
+-	if (!error)
+ 		register_cpu_under_node(num, cpu_to_node(num));
+ 
++		/* Initialize CPUs OPP table */
++		if (of_node_get(cpu->dev.of_node)) {
++			error = of_init_opp_table(&cpu->dev);
++			if (error && error != -ENODEV)
++				pr_err("****%s: failed to init OPP table for cpu%d, err: %d\n",
++						__func__, num, error);
++			of_node_put(cpu->dev.of_node);
++ 		}
++	}
+ 	return error;
+ }
+ 
+diff --git a/drivers/cpufreq/arm_big_little.c b/drivers/cpufreq/arm_big_little.c
+index 72f87e9..9195aa9 100644
+--- a/drivers/cpufreq/arm_big_little.c
++++ b/drivers/cpufreq/arm_big_little.c
+@@ -325,11 +325,13 @@ static int _get_cluster_clk_and_freq_table(struct device *cpu_dev)
+ 	if (freq_table[cluster])
+ 		return 0;
+ 
+-	ret = arm_bL_ops->init_opp_table(cpu_dev);
+-	if (ret) {
+-		dev_err(cpu_dev, "%s: init_opp_table failed, cpu: %d, err: %d\n",
+-				__func__, cpu_dev->id, ret);
+-		goto out;
++	if (arm_bL_ops->init_opp_table) {
++		ret = arm_bL_ops->init_opp_table(cpu_dev);
++		if (ret) {
++			dev_err(cpu_dev, "%s: init_opp_table failed, cpu: %d, err: %d\n",
++					__func__, cpu_dev->id, ret);
++			goto out;
++		}
+ 	}
+ 
+ 	ret = dev_pm_opp_init_cpufreq_table(cpu_dev, &freq_table[cluster]);
+@@ -540,7 +542,7 @@ int bL_cpufreq_register(struct cpufreq_arm_bL_ops *ops)
+ 		return -EBUSY;
+ 	}
+ 
+-	if (!ops || !strlen(ops->name) || !ops->init_opp_table) {
++	if (!ops || !strlen(ops->name)) {
+ 		pr_err("%s: Invalid arm_bL_ops, exiting\n", __func__);
+ 		return -ENODEV;
+ 	}
+diff --git a/drivers/cpufreq/arm_big_little_dt.c b/drivers/cpufreq/arm_big_little_dt.c
+index 8d9d591..502182d 100644
+--- a/drivers/cpufreq/arm_big_little_dt.c
++++ b/drivers/cpufreq/arm_big_little_dt.c
+@@ -43,23 +43,6 @@ static struct device_node *get_cpu_node_with_valid_op(int cpu)
+ 	return np;
+ }
+ 
+-static int dt_init_opp_table(struct device *cpu_dev)
+-{
+-	struct device_node *np;
+-	int ret;
+-
+-	np = of_node_get(cpu_dev->of_node);
+-	if (!np) {
+-		pr_err("failed to find cpu%d node\n", cpu_dev->id);
+-		return -ENOENT;
+-	}
+-
+-	ret = of_init_opp_table(cpu_dev);
+-	of_node_put(np);
+-
+-	return ret;
+-}
+-
+ static int dt_get_transition_latency(struct device *cpu_dev)
+ {
+ 	struct device_node *np;
+@@ -81,7 +64,6 @@ static int dt_get_transition_latency(struct device *cpu_dev)
+ static struct cpufreq_arm_bL_ops dt_bL_ops = {
+ 	.name	= "dt-bl",
+ 	.get_transition_latency = dt_get_transition_latency,
+-	.init_opp_table = dt_init_opp_table,
+ };
+ 
+ static int generic_bL_probe(struct platform_device *pdev)
+diff --git a/drivers/cpufreq/imx6q-cpufreq.c b/drivers/cpufreq/imx6q-cpufreq.c
+index 176b9da..ccba12c 100644
+--- a/drivers/cpufreq/imx6q-cpufreq.c
++++ b/drivers/cpufreq/imx6q-cpufreq.c
+@@ -6,7 +6,7 @@
+  * published by the Free Software Foundation.
+  */
+ 
+-#include <linux/busfreq-imx.h>
++#include <linux/busfreq-imx.h>
+ #include <linux/clk.h>
+ #include <linux/cpu.h>
+ #include <linux/cpufreq.h>
+@@ -36,9 +36,6 @@ static struct clk *pll2_pfd2_396m_clk;
+ static struct clk *pll1_bypass;
+ static struct clk *pll1_bypass_src;
+ static struct clk *pll1;
+-static struct clk *secondary_sel;
+-static struct clk *pll2_bus;
+-static struct clk *osc;
+ 
+ static struct device *cpu_dev;
+ static struct cpufreq_frequency_table *freq_table;
+@@ -53,6 +50,7 @@ static int imx6q_set_target(struct cpufreq_policy *policy, unsigned int index)
+ 	unsigned long freq_hz, volt, volt_old;
+ 	unsigned int old_freq, new_freq;
+ 	int ret;
++	int tol = 25000; /* 25mv tollerance */
+ 
+ 	mutex_lock(&set_cpufreq_lock);
+ 
+@@ -73,9 +71,9 @@ static int imx6q_set_target(struct cpufreq_policy *policy, unsigned int index)
+ 	rcu_read_unlock();
+ 	volt_old = regulator_get_voltage(arm_reg);
+ 
+-	dev_dbg(cpu_dev, "%u MHz, %ld mV --> %u MHz, %ld mV\n",
++	dev_dbg(cpu_dev, "%u MHz, %ld mV --> %u MHz, %ld/%d mV\n",
+ 		old_freq / 1000, volt_old / 1000,
+-		new_freq / 1000, volt / 1000);
++		new_freq / 1000, volt / 1000, imx6_soc_volt[index] / 1000);
+ 	/*
+ 	 * CPU freq is increasing, so need to ensure
+ 	 * that bus frequency is increased too.
+@@ -87,7 +85,7 @@ static int imx6q_set_target(struct cpufreq_policy *policy, unsigned int index)
+ 	if (new_freq > old_freq) {
+ 		if (!IS_ERR(pu_reg) && regulator_is_enabled(pu_reg)) {
+ 			ret = regulator_set_voltage_tol(pu_reg,
+-				imx6_soc_volt[index], 0);
++				imx6_soc_volt[index], tol);
+ 			if (ret) {
+ 				dev_err(cpu_dev,
+ 					"failed to scale vddpu up: %d\n", ret);
+@@ -95,13 +93,13 @@ static int imx6q_set_target(struct cpufreq_policy *policy, unsigned int index)
+ 				return ret;
+ 			}
+ 		}
+-		ret = regulator_set_voltage_tol(soc_reg, imx6_soc_volt[index], 0);
++		ret = regulator_set_voltage_tol(soc_reg, imx6_soc_volt[index], tol);
+ 		if (ret) {
+ 			dev_err(cpu_dev, "failed to scale vddsoc up: %d\n", ret);
+ 			mutex_unlock(&set_cpufreq_lock);
+ 			return ret;
+ 		}
+-		ret = regulator_set_voltage_tol(arm_reg, volt, 0);
++		ret = regulator_set_voltage_tol(arm_reg, volt, tol);
+ 		if (ret) {
+ 			dev_err(cpu_dev,
+ 				"failed to scale vddarm up: %d\n", ret);
+@@ -112,74 +110,54 @@ static int imx6q_set_target(struct cpufreq_policy *policy, unsigned int index)
+ 
+ 	/*
+ 	 * The setpoints are selected per PLL/PDF frequencies, so we need to
+-	 * reprogram PLL for frequency scaling. The procedure of reprogramming
++	 * reprogram PLL for frequency scaling.  The procedure of reprogramming
+ 	 * PLL1 is as below.
+-	 * For i.MX6UL, it has a secondary clk mux, the cpu frequency change
+-	 * flow is slightly different from other I.MX6 SOC.
+ 	 *
+-	 * The cpu frequency change flow for i.MX6(except i.MX6UL) is as below:
+ 	 *  - Enable pll2_pfd2_396m_clk and reparent pll1_sw_clk to it
+ 	 *  - Reprogram pll1_sys_clk and reparent pll1_sw_clk back to it
+ 	 *  - Disable pll2_pfd2_396m_clk
+ 	 */
+-	if (!IS_ERR(secondary_sel)) {
+-
+-		/* When changing pll1_sw source to pll1_sys, cpu may run at higher
+-		 * than 528MHz, this will lead to the system unstable if the voltage
+-		 * is lower than the voltage of 528MHz. So lower the cpu frequency to
+-		 * one half before changing cpu frequency.
+-		 */
+-		clk_set_rate(arm_clk, (old_freq >> 1) * 1000);
++	clk_set_parent(step_clk, pll2_pfd2_396m_clk);
++	clk_set_parent(pll1_sw_clk, step_clk);
++	if (freq_hz > clk_get_rate(pll2_pfd2_396m_clk)) {
++		clk_set_rate(pll1_sys_clk, new_freq * 1000);
++		 /*
++		  * Ensure pll1_bypass is set back to pll1.
++		  */
+ 		clk_set_parent(pll1_sw_clk, pll1_sys_clk);
+-		clk_set_parent(step_clk, osc);
+-		if (freq_hz > clk_get_rate(pll2_pfd2_396m_clk))
+-			clk_set_parent(secondary_sel, pll2_bus);
+-		else
+-			ret = clk_set_parent(secondary_sel, pll2_pfd2_396m_clk);
+-		clk_set_parent(step_clk, secondary_sel);
+-		clk_set_parent(pll1_sw_clk, step_clk);
+-	} else {
+-		clk_set_parent(step_clk, pll2_pfd2_396m_clk);
+-		clk_set_parent(pll1_sw_clk, step_clk);
+-		if (freq_hz > clk_get_rate(pll2_pfd2_396m_clk)) {
+-			clk_set_rate(pll1, new_freq * 1000);
+-
+-			/* Ensure pll1_bypass is set back to pll1. */
+-			clk_set_parent(pll1_bypass, pll1);
+-			clk_set_parent(pll1_sw_clk, pll1_sys_clk);
+-		} else
+-			/*
+-			 * Need to ensure that PLL1 is bypassed and enabled
+-			 * before ARM-PODF is set.
+-			 */
+-			clk_set_parent(pll1_bypass, pll1_bypass_src);
++	} else{
++		/*
++		  * Need to ensure that PLL1 is bypassed and enabled
++		  * before ARM-PODF is set.
++		  */
++		clk_set_parent(pll1_bypass, pll1_bypass_src);
+ 	}
+ 
+ 	/* Ensure the arm clock divider is what we expect */
+ 	ret = clk_set_rate(arm_clk, new_freq * 1000);
+ 	if (ret) {
+ 		dev_err(cpu_dev, "failed to set clock rate: %d\n", ret);
+-		regulator_set_voltage_tol(arm_reg, volt_old, 0);
++		regulator_set_voltage_tol(arm_reg, volt_old, tol);
+ 		mutex_unlock(&set_cpufreq_lock);
+ 		return ret;
+ 	}
+ 
+ 	/* scaling down?  scale voltage after frequency */
+ 	if (new_freq < old_freq) {
+-		ret = regulator_set_voltage_tol(arm_reg, volt, 0);
++		ret = regulator_set_voltage_tol(arm_reg, volt, tol);
+ 		if (ret) {
+ 			dev_warn(cpu_dev,
+ 				 "failed to scale vddarm down: %d\n", ret);
+ 			ret = 0;
+ 		}
+-		ret = regulator_set_voltage_tol(soc_reg, imx6_soc_volt[index], 0);
++		ret = regulator_set_voltage_tol(soc_reg, imx6_soc_volt[index], tol);
+ 		if (ret) {
+ 			dev_warn(cpu_dev, "failed to scale vddsoc down: %d\n", ret);
+ 			ret = 0;
+ 		}
+ 		if (!IS_ERR(pu_reg) && regulator_is_enabled(pu_reg)) {
+ 			ret = regulator_set_voltage_tol(pu_reg,
+-				imx6_soc_volt[index], 0);
++				imx6_soc_volt[index], tol);
+ 			if (ret) {
+ 				dev_warn(cpu_dev,
+ 					"failed to scale vddpu down: %d\n",
+@@ -301,11 +279,6 @@ static int imx6q_cpufreq_probe(struct platform_device *pdev)
+ 		goto put_node;
+ 	}
+ 
+-	/* below clks are just for i.MX6UL */
+-	pll2_bus = devm_clk_get(cpu_dev, "pll2_bus");
+-	secondary_sel = devm_clk_get(cpu_dev, "secondary_sel");
+-	osc = devm_clk_get(cpu_dev, "osc");
+-
+ 	arm_reg = devm_regulator_get_optional(cpu_dev, "arm");
+ 	pu_reg = devm_regulator_get_optional(cpu_dev, "pu");
+ 	soc_reg = devm_regulator_get_optional(cpu_dev, "soc");
+@@ -315,6 +288,8 @@ static int imx6q_cpufreq_probe(struct platform_device *pdev)
+ 		goto put_node;
+ 	}
+ 
++	num = dev_pm_opp_get_opp_count(cpu_dev);
++
+ 	/*
+ 	 * soc_reg sync  with arm_reg if arm shares the same regulator
+ 	 * with soc. Otherwise, regulator common framework will refuse to update
+@@ -325,30 +300,8 @@ static int imx6q_cpufreq_probe(struct platform_device *pdev)
+ 	of_property_read_u32(np, "fsl,arm-soc-shared", &i);
+ 	if (i == 1)
+ 		soc_reg = arm_reg;
+-	/*
+-	 * We expect an OPP table supplied by platform.
+-	 * Just, incase the platform did not supply the OPP
+-	 * table, it will try to get it.
+-	 */
+-	rcu_read_lock();
+-	num = dev_pm_opp_get_opp_count(cpu_dev);
+-	rcu_read_unlock();
+-	if (num < 0) {
+-		ret = of_init_opp_table(cpu_dev);
+-		if (ret < 0) {
+-			dev_err(cpu_dev, "failed to init OPP table: %d\n", ret);
+-			goto put_node;
+-		}
+ 
+-		rcu_read_lock();
+-		num = dev_pm_opp_get_opp_count(cpu_dev);
+-		rcu_read_unlock();
+-		if (num < 0) {
+-			ret = num;
+-			dev_err(cpu_dev, "no OPP table is found: %d\n", ret);
+-			goto put_node;
+-		}
+-	}
++	WARN_ON(num < 0);
+ 
+ 	ret = dev_pm_opp_init_cpufreq_table(cpu_dev, &freq_table);
+ 	if (ret) {
+diff --git a/drivers/mfd/tps65910-irq.c b/drivers/mfd/tps65910-irq.c
+index 83a915e..dfbbe1f 100644
+--- a/drivers/mfd/tps65910-irq.c
++++ b/drivers/mfd/tps65910-irq.c
+@@ -24,7 +24,7 @@
+ #include <linux/mfd/tps65910.h>
+ 
+ static inline int irq_to_tps65910_irq(struct tps65910 *tps65910,
+-		int irq)
++							int irq)
+ {
+ 	return (irq - tps65910->irq_base);
+ }
+@@ -128,7 +128,7 @@ static struct irq_chip tps65910_irq_chip = {
+ };
+ 
+ int tps65910_irq_init(struct tps65910 *tps65910, int irq,
+-		struct tps65910_platform_data *pdata)
++		    struct tps65910_platform_data *pdata)
+ {
+ 	int ret, cur_irq;
+ 	int flags = IRQF_ONESHOT;
+@@ -156,11 +156,11 @@ int tps65910_irq_init(struct tps65910 *tps65910, int irq,
+ 
+ 	/* Register with genirq */
+ 	for (cur_irq = tps65910->irq_base;
+-			cur_irq < TPS65910_NUM_IRQ + tps65910->irq_base;
+-			cur_irq++) {
++	     cur_irq < TPS65910_NUM_IRQ + tps65910->irq_base;
++	     cur_irq++) {
+ 		irq_set_chip_data(cur_irq, tps65910);
+ 		irq_set_chip_and_handler(cur_irq, &tps65910_irq_chip,
+-				handle_edge_irq);
++					 handle_edge_irq);
+ 		irq_set_nested_thread(cur_irq, 1);
+ 
+ 		/* ARM needs us to explicitly flag the IRQ as valid
+@@ -173,7 +173,7 @@ int tps65910_irq_init(struct tps65910 *tps65910, int irq,
+ 	}
+ 
+ 	ret = request_threaded_irq(irq, NULL, tps65910_irq, flags,
+-			"tps65910", tps65910);
++				   "tps65910", tps65910);
+ 	if (ret != 0)
+ 		dev_err(tps65910->dev, "Failed to request IRQ: %d\n", ret);
+ 
