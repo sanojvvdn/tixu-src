@@ -1,0 +1,155 @@
+diff --git a/board/ti/mx6sltixu/mx6sltixu.c b/board/ti/mx6sltixu/mx6sltixu.c
+index 861c7c6..f93a072 100644
+--- a/board/ti/mx6sltixu/mx6sltixu.c
++++ b/board/ti/mx6sltixu/mx6sltixu.c
+@@ -163,118 +163,24 @@ static void setup_iomux_fec(void)
+ #define USDHC2_CD_GPIO	IMX_GPIO_NR(5, 0)
+ #define USDHC3_CD_GPIO	IMX_GPIO_NR(3, 22)
+ 
+-static struct fsl_esdhc_cfg usdhc_cfg[3] = {
++#ifdef CONFIG_FSL_ESDHC
++static struct fsl_esdhc_cfg usdhc_cfg[1] = {
+ 	{USDHC1_BASE_ADDR},
+-	{USDHC2_BASE_ADDR, 0, 4},
+-	{USDHC3_BASE_ADDR, 0, 4},
+ };
+ 
+ int board_mmc_getcd(struct mmc *mmc)
+ {
+-	struct fsl_esdhc_cfg *cfg = (struct fsl_esdhc_cfg *)mmc->priv;
+-	int ret = 0;
+-
+-	switch (cfg->esdhc_base) {
+-	case USDHC1_BASE_ADDR:
+-		ret = !gpio_get_value(USDHC1_CD_GPIO);
+-		break;
+-	case USDHC2_BASE_ADDR:
+-		ret = !gpio_get_value(USDHC2_CD_GPIO);
+-		break;
+-	case USDHC3_BASE_ADDR:
+-		ret = !gpio_get_value(USDHC3_CD_GPIO);
+-		break;
+-	}
+-
+-	return ret;
++	gpio_direction_input(IMX_GPIO_NR(4, 7));
++	return !gpio_get_value(IMX_GPIO_NR(4, 7));
+ }
+ 
+ int board_mmc_init(bd_t *bis)
+ {
+-#ifndef CONFIG_SPL_BUILD
+-	int i, ret;
+-
+-	/*
+-	 * According to the board_mmc_init() the following map is done:
+-	 * (U-boot device node)    (Physical Port)
+-	 * mmc0                    USDHC1
+-	 * mmc1                    USDHC2
+-	 * mmc2                    USDHC3
+-	 */
+-	for (i = 0; i < CONFIG_SYS_FSL_USDHC_NUM; i++) {
+-		switch (i) {
+-		case 0:
+-			imx_iomux_v3_setup_multiple_pads(
+-				usdhc1_pads, ARRAY_SIZE(usdhc1_pads));
+-			gpio_direction_input(USDHC1_CD_GPIO);
+-			usdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC_CLK);
+-			break;
+-		case 1:
+-			imx_iomux_v3_setup_multiple_pads(
+-				usdhc2_pads, ARRAY_SIZE(usdhc2_pads));
+-			gpio_direction_input(USDHC2_CD_GPIO);
+-			usdhc_cfg[1].sdhc_clk = mxc_get_clock(MXC_ESDHC2_CLK);
+-			break;
+-		case 2:
+-			imx_iomux_v3_setup_multiple_pads(
+-				usdhc3_pads, ARRAY_SIZE(usdhc3_pads));
+-			gpio_direction_input(USDHC3_CD_GPIO);
+-			usdhc_cfg[2].sdhc_clk = mxc_get_clock(MXC_ESDHC3_CLK);
+-			break;
+-		default:
+-			printf("Warning: you configured more USDHC controllers"
+-				"(%d) than supported by the board\n", i + 1);
+-			return -EINVAL;
+-			}
+-
+-			ret = fsl_esdhc_initialize(bis, &usdhc_cfg[i]);
+-			if (ret) {
+-				printf("Warning: failed to initialize "
+-					"mmc dev %d\n", i);
+-				return ret;
+-			}
+-	}
+-
+-	return 0;
+-#else
+-	struct src *src_regs = (struct src *)SRC_BASE_ADDR;
+-	u32 val;
+-	u32 port;
+-
+-	val = readl(&src_regs->sbmr1);
+-
+-	/* Boot from USDHC */
+-	port = (val >> 11) & 0x3;
+-	switch (port) {
+-	case 0:
+-		imx_iomux_v3_setup_multiple_pads(usdhc1_pads,
+-						 ARRAY_SIZE(usdhc1_pads));
+-		gpio_direction_input(USDHC1_CD_GPIO);
+-		usdhc_cfg[0].esdhc_base = USDHC1_BASE_ADDR;
+-		usdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC_CLK);
+-		break;
+-	case 1:
+-		imx_iomux_v3_setup_multiple_pads(usdhc2_pads,
+-						 ARRAY_SIZE(usdhc2_pads));
+-		gpio_direction_input(USDHC2_CD_GPIO);
+-		usdhc_cfg[0].esdhc_base = USDHC2_BASE_ADDR;
+-		usdhc_cfg[0].max_bus_width = 4;
+-		usdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC2_CLK);
+-		break;
+-	case 2:
+-		imx_iomux_v3_setup_multiple_pads(usdhc3_pads,
+-						 ARRAY_SIZE(usdhc3_pads));
+-		gpio_direction_input(USDHC3_CD_GPIO);
+-		usdhc_cfg[0].esdhc_base = USDHC3_BASE_ADDR;
+-		usdhc_cfg[0].max_bus_width = 4;
+-		usdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC3_CLK);
+-		break;
+-	}
+-
+-	gd->arch.sdhc_clk = usdhc_cfg[0].sdhc_clk;
++	imx_iomux_v3_setup_multiple_pads(usdhc1_pads, ARRAY_SIZE(usdhc1_pads));
++	usdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC_CLK);
+ 	return fsl_esdhc_initialize(bis, &usdhc_cfg[0]);
+-#endif
+ }
++#endif
+ 
+ #ifdef CONFIG_SYS_I2C_MXC
+ #ifdef CONFIG_POWER_TPS65910 
+diff --git a/include/configs/mx6sltixu.h b/include/configs/mx6sltixu.h
+index e35c9d2..fb1ae5d 100644
+--- a/include/configs/mx6sltixu.h
++++ b/include/configs/mx6sltixu.h
+@@ -173,7 +173,7 @@
+ /* Environment organization */
+ #define CONFIG_ENV_SIZE			SZ_8K
+ 
+-#define CONFIG_SYS_BOOT_SPINOR
++/* #define CONFIG_SYS_BOOT_SPINOR */
+ #if defined CONFIG_SYS_BOOT_SPINOR
+ #define CONFIG_ENV_IS_IN_SPI_FLASH
+ #define CONFIG_ENV_OFFSET               (768 * 1024)
+@@ -214,9 +214,9 @@
+ #define CONFIG_USB_MAX_CONTROLLER_COUNT	2
+ #endif
+ 
+-#define CONFIG_SYS_FSL_USDHC_NUM	1
++#define CONFIG_SYS_FSL_USDHC_NUM	0
+ #if defined(CONFIG_ENV_IS_IN_MMC)
+-#define CONFIG_SYS_MMC_ENV_DEV		1	/* SDHC2*/
++#define CONFIG_SYS_MMC_ENV_DEV		0	/* SDHC1*/
+ #endif
+ 
+ #define CONFIG_IMX_THERMAL
