@@ -12,4 +12,5 @@ SRC_URI = "git://git.freescale.com/imx/linux-2.6-imx.git;branch=${SRCBRANCH} \
            file://0006-tixu_pmic_bt.patch \
 	   file://0007-tixu_pmic_dvfs.patch \
 	   file://0008-tixu_pmic_dvfs.patch \
+	   file://0009-tixu_pmic_rtc_wakeup.patch \
 			"
