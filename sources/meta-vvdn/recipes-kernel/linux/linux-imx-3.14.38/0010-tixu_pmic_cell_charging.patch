@@ -1,0 +1,62 @@
+diff --git a/drivers/rtc/rtc-tps65910.c b/drivers/rtc/rtc-tps65910.c
+index 80eb2c5..6b5c776 100644
+--- a/drivers/rtc/rtc-tps65910.c
++++ b/drivers/rtc/rtc-tps65910.c
+@@ -287,6 +287,12 @@ static int tps65910_rtc_probe(struct platform_device *pdev)
+ 		return ret;
+ 	}
+ 
++	/* Enable RTC cell charging */
++	rtc_reg = TPS65910_BBCH_BBCHEN; 
++	ret = regmap_write(tps65910->regmap, TPS65910_BBCH, rtc_reg);
++	if (ret < 0)
++		return ret;
++
+ 	return 0;
+ }
+ 
+diff --git a/include/linux/mfd/tps65910.h b/include/linux/mfd/tps65910.h
+index 33518a8..0d204bf 100644
+--- a/include/linux/mfd/tps65910.h
++++ b/include/linux/mfd/tps65910.h
+@@ -364,6 +364,7 @@
+ /*Register BBCH  (0x80) register.RegisterDescription */
+ #define BBCH_BBSEL_MASK					0x06
+ #define BBCH_BBSEL_SHIFT				1
++#define TPS65910_BBCH_BBCHEN				0x07 
+ 
+ 
+ /*Register DCDCCTRL  (0x80) register.RegisterDescription */
+@@ -898,13 +899,16 @@ struct tps65910 {
+ 	struct device *dev;
+ 	struct i2c_client *i2c_client;
+ 	struct regmap *regmap;
+-	unsigned int id;
++	unsigned long id;
+ 	struct mutex io_mutex;
+ 
+ 	/* Client devices */
+ 	struct tps65910_pmic *pmic;
+ 	struct tps65910_rtc *rtc;
+ 	struct tps65910_power *power;
++	int (*read)(struct tps65910 *tps65910, u8 reg, int size, void *dest);
++        int (*write)(struct tps65910 *tps65910, u8 reg, int size, void *src);
++
+ 
+ 	/* Device node parsed board data */
+ 	struct tps65910_board *of_plat_data;
+@@ -912,8 +916,6 @@ struct tps65910 {
+ 	/* IRQ Handling */
+ 	int chip_irq;
+ 	struct regmap_irq_chip_data *irq_data;
+-	int (*read)(struct tps65910 *tps65910, u8 reg, int size, void *dest);
+-        int (*write)(struct tps65910 *tps65910, u8 reg, int size, void *src);
+ 	struct gpio_chip gpio;
+ 	struct mutex irq_lock;
+ 	int irq_base;
+@@ -967,4 +969,5 @@ static inline int tps65910_irq_get_virq(struct tps65910 *tps65910, int irq)
+ 	return regmap_irq_get_virq(tps65910->irq_data, irq);
+ }
+ 
++
+ #endif /*  __LINUX_MFD_TPS65910_H */
